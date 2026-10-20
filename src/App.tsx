@@ -361,10 +361,11 @@ export default function App() {
 
   const currentTheme = getThemeClasses();
 
+  // TELA DE LOGIN / REGISTO COM PROTEÇÃO DE MARGEM INFERIOR
   if (!currentUser) {
     return (
-      <div className={`min-h-screen flex flex-col justify-between transition-colors duration-200 ${currentTheme.bg} ${currentTheme.textPrimary}`}>
-        <header className={`border-b ${currentTheme.border} px-4 h-16 flex items-center justify-between`}>
+      <div className={`min-h-[100dvh] flex flex-col justify-between safe-top safe-bottom pb-24 transition-colors duration-200 ${currentTheme.bg} ${currentTheme.textPrimary}`}>
+        <header className={`border-b ${currentTheme.border} px-4 h-16 flex items-center justify-between shrink-0`}>
           <div className="flex items-center space-x-2">
             <BookOpen className="w-5 h-5 sm:w-6 sm:h-6 text-amber-700 shrink-0" />
             <span className="font-serif font-bold text-base sm:text-lg tracking-tight">Kerygma Devocional</span>
@@ -497,15 +498,16 @@ export default function App() {
           </div>
         </main>
 
-        <footer className="text-center py-4 text-xs text-stone-400">
+        <footer className="text-center py-2 text-xs text-stone-500/80 shrink-0">
           Kerygma Devocional &bull; Teologia Sistemática & Exegese Canónica
         </footer>
       </div>
     );
   }
 
+  // PAINEL COMPLETO
   return (
-    <div className={`min-h-screen transition-colors duration-200 ${currentTheme.bg} ${currentTheme.textPrimary}`}>
+    <div className={`min-h-[100dvh] safe-top safe-bottom pb-20 transition-colors duration-200 ${currentTheme.bg} ${currentTheme.textPrimary}`}>
       {viewMode === 'reading' && currentDevotional && (
         <div className="fixed top-0 left-0 w-full h-1 z-50 bg-black/5 dark:bg-white/5">
           <div 
@@ -518,7 +520,6 @@ export default function App() {
       {/* Cabeçalho Responsivo */}
       <header className={`sticky top-0 z-30 backdrop-blur-md border-b ${currentTheme.border} ${theme === 'dark' ? 'bg-[#121316]/90' : 'bg-white/80'}`}>
         <div className="max-w-4xl mx-auto px-3 sm:px-4 h-16 flex items-center justify-between gap-2">
-          
           <button 
             onClick={() => setViewMode('home')}
             className="flex items-center space-x-2 text-left hover:opacity-85 transition cursor-pointer min-w-0 shrink"
@@ -550,7 +551,7 @@ export default function App() {
               <span className="text-[11px] opacity-80">({devotionalsList.length})</span>
             </button>
 
-            {/* Alternador de tema: 1 botão no telemóvel / 3 no desktop */}
+            {/* Alternador Compacto Mobile */}
             <button 
               onClick={cycleTheme}
               className="sm:hidden p-1.5 rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 cursor-pointer"
