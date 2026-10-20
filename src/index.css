@@ -1,0 +1,28 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Cinzel:wght@500;600;700&display=swap');
+@import "tailwindcss";
+
+/* O restante das suas classes e estilos customizados vem abaixo... */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+
+@theme {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-serif: 'Lora', Georgia, serif;
+  --font-reading: 'Lora', Georgia, serif;
+
+  --color-sepia-50: #FAF8F5;
+  --color-sepia-100: #F4ECE1;
+  --color-sepia-200: #E8DBC5;
+  --color-sepia-800: #3D342B;
+  --color-sepia-900: #2A241E;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-reading {
+  font-family: var(--font-reading);
+}
