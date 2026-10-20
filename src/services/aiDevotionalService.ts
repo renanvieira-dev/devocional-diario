@@ -1,10 +1,10 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import type { DevotionalDay } from '../types/devotional';
+import type { CellStudyInsight } from '../types/cellStudy';
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
 
-// Modelos Flash alternativos e independentes da sua chave
 const CANDIDATE_MODELS = [
   'gemini-3.7-flash',
   'gemini-3.6-flash',
@@ -203,9 +203,133 @@ Diretrizes:
       } catch (err: any) {
         lastError = err;
         console.warn(`Tentativa ${attempt} no modelo ${modelName} falhou:`, err?.message || err);
-        // Aguarda 1,5 segundos antes da próxima tentativa para contornar picos de tráfego (503)
         await new Promise((resolve) => setTimeout(resolve, 1500));
       }
+    }
+  }
+
+  throw lastError;
+}
+
+export function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64String = (reader.result as string).split(',')[1];
+      resolve(base64String);
+    };
+    reader.onerror = (error) => reject(error);
+    reader.readAsDataURL(file);
+  });
+}
+
+export async function analyzeCellStudyPdf(file: File): Promise<CellStudyInsight> {
+  const base64Data = await fileToBase64(file);
+
+  const prompt = `És um pastor e mentor experiente em liderança de pequenos grupos e células.
+Analisa o PDF anexado com o estudo/esboço e gera um GUIA COMPLETO DE MINISTRAÇÃO PARA CÉLULA.
+
+Diretrizes:
+- Extrai o texto bíblico principal e o tema central do documento.
+- Cria um Quebra-Gelo inteligente que introduza o tema de forma leve e participativa.
+- Divide a mensagem em tópicos claros e objetivos (máximo 15 a 20 minutos de exposição).
+- Para CADA tópico, fornece uma analogia/exemplo prático do quotidiano (trabalho, rotina, tecnologia, relacionamentos) que torne o conceito fácil de compreender.
+- Fornece 3 a 4 perguntas abertas que promovam diálogo genuíno no grupo.
+- Adiciona referências bíblicas complementares que enriqueçam o tema.
+- Um desafio prático semanal para a célula e direcionamento de oração.`;
+
+  const schemaConfig = {
+    systemInstruction:
+      'És um especialista em homilética pastoral e facilitação de células e pequenos grupos.',
+    responseMimeType: 'application/json',
+    responseSchema: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING },
+        passageBase: { type: Type.STRING },
+        icebreaker: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING },
+            description: { type: Type.STRING },
+            question: { type: Type.STRING },
+          },
+          required: ['title', 'description', 'question'],
+        },
+        mainIdea: { type: Type.STRING },
+        outlinePoints: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              point: { type: Type.STRING },
+              explanation: { type: Type.STRING },
+              practicalAnalogy: { type: Type.STRING },
+            },
+            required: ['point', 'explanation', 'practicalAnalogy'],
+          },
+        },
+        discussionQuestions: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+        },
+        crossReferences: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              ref: { type: Type.STRING },
+              howItConnects: { type: Type.STRING },
+            },
+            required: ['ref', 'howItConnects'],
+          },
+        },
+        lifeChallenge: { type: Type.STRING },
+        closingPrayerTopics: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+        },
+      },
+      required: [
+        'title',
+        'passageBase',
+        'icebreaker',
+        'mainIdea',
+        'outlinePoints',
+        'discussionQuestions',
+        'crossReferences',
+        'lifeChallenge',
+        'closingPrayerTopics',
+      ],
+    },
+  };
+
+  const parts = [
+    {
+      inlineData: {
+        mimeType: 'application/pdf',
+        data: base64Data,
+      },
+    },
+    { text: prompt },
+  ];
+
+  let lastError: any = null;
+
+  for (const modelName of CANDIDATE_MODELS) {
+    try {
+      console.log(`A processar PDF de célula com o modelo: ${modelName}...`);
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: parts,
+        config: schemaConfig,
+      });
+
+      return JSON.parse(response.text || '{}') as CellStudyInsight;
+    } catch (err: any) {
+      console.warn(`Tentativa no modelo ${modelName} falhou:`, err?.message || err);
+      lastError = err;
+      await new Promise((resolve) => setTimeout(resolve, 1500));
     }
   }
 
