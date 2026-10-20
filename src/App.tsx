@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, type FormEvent } from 'react';
 import { 
   BookOpen, 
   Bookmark, 
@@ -6,7 +6,7 @@ import {
   CheckCircle2, 
   ChevronDown, 
   ChevronLeft, 
-  ChevronUp,
+  ChevronUp, 
   Feather, 
   History, 
   Languages, 
@@ -28,11 +28,14 @@ import {
   CheckSquare, 
   Square, 
   ArrowRight,
+  LogOut,
+  Lock,
+  Mail,
   User as UserIcon,
-  LogOut
+  LogIn,
+  UserPlus
 } from 'lucide-react';
 import { generateTheologicalStudy } from './services/aiDevotionalService';
-import { AuthModal } from './components/AuthModal';
 import type {
   DevotionalDay,
   ThemeMode,
@@ -43,41 +46,45 @@ import type {
 } from './types/devotional';
 
 export default function App() {
-  // Lista de estudos salvos
+  // Estado do utilizador com sessão iniciada
+  const [currentUser, setCurrentUser] = useState<{ id: string; name: string; email: string } | null>(() => {
+    const saved = localStorage.getItem('kerygma_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  // Estados do formulário de autenticação
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authName, setAuthName] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState('');
+
+  // Lista de estudos guardados
   const [devotionalsList, setDevotionalsList] = useState<DevotionalDay[]>(() => {
     const saved = localStorage.getItem('kerygma_studies_list');
     return saved ? JSON.parse(saved) : [];
   });
 
-  // Controle de Navegação: 'home' (dashboard) ou 'reading' (leitura do estudo)
+  // Navegação: 'home' (painel principal) ou 'reading' (estudo aberto)
   const [viewMode, setViewMode] = useState<'home' | 'reading'>('home');
   const [activeStudyId, setActiveStudyId] = useState<string | null>(null);
 
-  // Usuário autenticado
-  const [currentUser, setCurrentUser] = useState<{ id: string; name: string; email: string } | null>(() => {
-    const saved = localStorage.getItem('kerygma_user');
-    return saved ? JSON.parse(saved) : null;
-  });
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
-
-  // Estudo ativo na leitura
   const currentDevotional: DevotionalDay | undefined = useMemo(() => {
     return devotionalsList.find(d => d.id === activeStudyId) || devotionalsList[0];
   }, [devotionalsList, activeStudyId]);
 
-  // Aparência e preferências
+  // Aparência
   const [theme, setTheme] = useState<ThemeMode>('sepia');
   const [fontSize, setFontSize] = useState<'sm' | 'base' | 'lg'>('base');
   const [isBookmarked, setIsBookmarked] = useState<boolean>(false);
   const [isCompleted, setIsCompleted] = useState<boolean>(false);
   
-  // Barra de progresso de scroll
+  // Progresso de leitura e modal de conclusão
   const [scrollProgress, setScrollProgress] = useState<number>(0);
-
-  // Modal de celebração e conclusão
   const [showCompletionModal, setShowCompletionModal] = useState<boolean>(false);
 
-  // Modal de histórico e busca
+  // Modal de histórico e pesquisa
   const [isCalendarOpen, setIsCalendarOpen] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedLocus, setSelectedLocus] = useState<string>('Todos');
@@ -87,27 +94,122 @@ export default function App() {
   const [customPassageInput, setCustomPassageInput] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
 
-  // Seções expansíveis
+  // Secções expansíveis
   const [showExegesis, setShowExegesis] = useState<boolean>(true);
   const [showConfessions, setShowConfessions] = useState<boolean>(true);
   const [showHistory, setShowHistory] = useState<boolean>(true);
   
-  // Diário
+  // Diário e desafios
   const [userNote, setUserNote] = useState<string>('');
   const [savedNoteStatus, setSavedNoteStatus] = useState<boolean>(false);
-
-  // Desafios práticos marcados como concluídos
   const [completedChallenges, setCompletedChallenges] = useState<Record<string, boolean>>({});
 
-  // Detecta se já existe o estudo de hoje
   const todayIso = new Date().toISOString().split('T')[0];
   const todaysStudy = useMemo(() => {
     return devotionalsList.find(d => d.date === todayIso);
   }, [devotionalsList, todayIso]);
 
-  // Cálculo da barra de progresso durante o scroll
+  // Gestão de autenticação (API com fallback local para garantir funcionamento na Vercel)
+  const handleAuthSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthLoading(true);
+
+    const apiUrl = import.meta.env.VITE_API_URL || '';
+    const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
+
+    try {
+      const res = await fetch(`${apiUrl}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          authMode === 'login'
+            ? { email: authEmail, password: authPassword }
+            : { name: authName, email: authEmail, password: authPassword }
+        ),
+      });
+
+      const contentType = res.headers.get('content-type');
+      if (res.ok && contentType && contentType.includes('application/json')) {
+        const data = await res.json();
+        localStorage.setItem('kerygma_token', data.token);
+        localStorage.setItem('kerygma_user', JSON.stringify(data.user));
+        setCurrentUser(data.user);
+        return;
+      }
+      
+      if (!res.ok && contentType && contentType.includes('application/json')) {
+        const data = await res.json();
+        throw new Error(data.error || 'Credenciais inválidas.');
+      }
+
+      // Se a rota /api não estiver ativa no servidor (Vercel estática), mantém autenticação local
+      handleLocalAuthFallback();
+    } catch (err: any) {
+      if (err.message && err.message !== 'Failed to fetch') {
+        setAuthError(err.message);
+      } else {
+        handleLocalAuthFallback();
+      }
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLocalAuthFallback = () => {
+    const localUsersKey = 'kerygma_local_users';
+    const users = JSON.parse(localStorage.getItem(localUsersKey) || '[]');
+
+    if (authMode === 'register') {
+      const exists = users.find((u: any) => u.email === authEmail.toLowerCase().trim());
+      if (exists) {
+        setAuthError('Este e-mail já se encontra registado.');
+        return;
+      }
+      const newUser = {
+        id: `usr_${Date.now()}`,
+        name: authName.trim(),
+        email: authEmail.toLowerCase().trim(),
+        password: authPassword
+      };
+      users.push(newUser);
+      localStorage.setItem(localUsersKey, JSON.stringify(users));
+      const sessionUser = { id: newUser.id, name: newUser.name, email: newUser.email };
+      localStorage.setItem('kerygma_user', JSON.stringify(sessionUser));
+      setCurrentUser(sessionUser);
+    } else {
+      const user = users.find((u: any) => u.email === authEmail.toLowerCase().trim() && u.password === authPassword);
+      if (!user) {
+        // Se ainda não houver utilizadores registados localmente, cria o primeiro acesso
+        if (users.length === 0) {
+          const defaultUser = {
+            id: `usr_${Date.now()}`,
+            name: authEmail.split('@')[0],
+            email: authEmail.toLowerCase().trim(),
+          };
+          localStorage.setItem('kerygma_user', JSON.stringify(defaultUser));
+          setCurrentUser(defaultUser);
+          return;
+        }
+        setAuthError('E-mail ou palavra-passe incorretos.');
+        return;
+      }
+      const sessionUser = { id: user.id, name: user.name, email: user.email };
+      localStorage.setItem('kerygma_user', JSON.stringify(sessionUser));
+      setCurrentUser(sessionUser);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('kerygma_token');
+    localStorage.removeItem('kerygma_user');
+    setCurrentUser(null);
+    setViewMode('home');
+  };
+
+  // Progresso do scroll na leitura
   useEffect(() => {
-    if (viewMode !== 'reading') return;
+    if (viewMode !== 'reading' || !currentUser) return;
 
     const handleScroll = () => {
       const totalHeight = document.documentElement.scrollHeight - window.innerHeight;
@@ -122,11 +224,11 @@ export default function App() {
 
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [viewMode, currentDevotional]);
+  }, [viewMode, currentDevotional, currentUser]);
 
-  // Carrega notas, favoritos e desafios ao selecionar um estudo
+  // Carrega os dados específicos do estudo ativo
   useEffect(() => {
-    if (!currentDevotional || viewMode !== 'reading') return;
+    if (!currentDevotional || viewMode !== 'reading' || !currentUser) return;
     const saved = localStorage.getItem(`note_${currentDevotional.id}`);
     setUserNote(saved || '');
     const completed = localStorage.getItem(`completed_${currentDevotional.id}`);
@@ -139,7 +241,7 @@ export default function App() {
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
     setScrollProgress(0);
-  }, [currentDevotional, viewMode]);
+  }, [currentDevotional, viewMode, currentUser]);
 
   const handleSaveNote = () => {
     if (!currentDevotional) return;
@@ -153,10 +255,7 @@ export default function App() {
     const nextState = !isCompleted;
     setIsCompleted(nextState);
     localStorage.setItem(`completed_${currentDevotional.id}`, JSON.stringify(nextState));
-    
-    if (nextState) {
-      setShowCompletionModal(true);
-    }
+    if (nextState) setShowCompletionModal(true);
   };
 
   const toggleChallenge = (index: number) => {
@@ -177,6 +276,7 @@ export default function App() {
   };
 
   const handleGenerateStudy = async (targetPassage?: string) => {
+    if (!currentUser) return;
     try {
       setIsGenerating(true);
       const newStudy = await generateTheologicalStudy(targetPassage);
@@ -205,12 +305,6 @@ export default function App() {
     setActiveStudyId(id);
     setViewMode('reading');
     setIsCalendarOpen(false);
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('kerygma_token');
-    localStorage.removeItem('kerygma_user');
-    setCurrentUser(null);
   };
 
   const availableLoci = useMemo(() => {
@@ -276,6 +370,160 @@ export default function App() {
 
   const currentTheme = getThemeClasses();
 
+  // =========================================================================
+  // BLOQUEIO TOTAL SEM LOGIN: EXIBE APENAS A TELA DE ACESSO
+  // =========================================================================
+  if (!currentUser) {
+    return (
+      <div className={`min-h-screen flex flex-col justify-between transition-colors duration-200 ${currentTheme.bg} ${currentTheme.textPrimary}`}>
+        
+        {/* Barra superior simplificada com seletor de tema */}
+        <header className={`border-b ${currentTheme.border} px-4 h-16 flex items-center justify-between`}>
+          <div className="flex items-center space-x-2.5">
+            <BookOpen className="w-6 h-6 text-amber-700" />
+            <span className="font-serif font-bold text-lg tracking-tight">Kerygma Devocional</span>
+          </div>
+
+          <div className="flex bg-black/5 dark:bg-white/5 p-1 rounded-lg border border-black/10 dark:border-white/10">
+            <button onClick={() => setTheme('light')} className={`p-1.5 rounded ${theme === 'light' ? 'bg-white shadow-xs' : ''}`} title="Modo Claro">
+              <Sun className="w-4 h-4 text-amber-600" />
+            </button>
+            <button onClick={() => setTheme('sepia')} className={`p-1.5 rounded ${theme === 'sepia' ? 'bg-[#EAE1D3] shadow-xs' : ''}`} title="Modo Sépia">
+              <Coffee className="w-4 h-4 text-amber-900" />
+            </button>
+            <button onClick={() => setTheme('dark')} className={`p-1.5 rounded ${theme === 'dark' ? 'bg-zinc-800 shadow-xs' : ''}`} title="Modo Escuro">
+              <Moon className="w-4 h-4 text-blue-400" />
+            </button>
+          </div>
+        </header>
+
+        {/* Ecrã Central de Autenticação */}
+        <main className="flex-1 flex items-center justify-center p-4">
+          <div className={`w-full max-w-md rounded-3xl border p-8 shadow-xl ${currentTheme.card} space-y-6 animate-in fade-in duration-300`}>
+            
+            <div className="text-center space-y-2">
+              <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-700 dark:text-amber-400 mb-3">
+                <Lock className="w-7 h-7" />
+              </div>
+              <h2 className="text-2xl font-bold font-serif">
+                {authMode === 'login' ? 'Acesso ao Kerygma' : 'Criar Conta de Acesso'}
+              </h2>
+              <p className={`text-xs sm:text-sm ${currentTheme.textSecondary} leading-relaxed`}>
+                {authMode === 'login' 
+                  ? 'Inicie sessão para gerar novos estudos diários, consultar o histórico e aceder ao diário teológico.' 
+                  : 'Crie uma conta para acompanhar o seu progresso diário e colocar desafios práticos em ação.'}
+              </p>
+            </div>
+
+            {authError && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs text-center font-medium">
+                {authError}
+              </div>
+            )}
+
+            <form onSubmit={handleAuthSubmit} className="space-y-4">
+              {authMode === 'register' && (
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-stone-500 mb-1">
+                    Nome Completo
+                  </label>
+                  <div className="relative">
+                    <UserIcon className="w-4 h-4 absolute left-3.5 top-3 text-stone-400" />
+                    <input
+                      type="text"
+                      required
+                      placeholder="O seu nome"
+                      value={authName}
+                      onChange={(e) => setAuthName(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 text-xs rounded-xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-black/30 focus:outline-none focus:ring-2 focus:ring-amber-600"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-stone-500 mb-1">
+                  E-mail
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 absolute left-3.5 top-3 text-stone-400" />
+                  <input
+                    type="email"
+                    required
+                    placeholder="exemplo@dominio.com"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 text-xs rounded-xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-black/30 focus:outline-none focus:ring-2 focus:ring-amber-600"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-stone-500 mb-1">
+                  Palavra-passe
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 absolute left-3.5 top-3 text-stone-400" />
+                  <input
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 text-xs rounded-xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-black/30 focus:outline-none focus:ring-2 focus:ring-amber-600"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={authLoading}
+                className="w-full py-3 text-xs font-bold uppercase tracking-wider rounded-xl bg-amber-800 text-white hover:bg-amber-900 disabled:opacity-50 transition flex items-center justify-center gap-2 shadow-md cursor-pointer"
+              >
+                {authLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : authMode === 'login' ? (
+                  <>
+                    <LogIn className="w-4 h-4" />
+                    <span>Entrar no Painel</span>
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="w-4 h-4" />
+                    <span>Concluir Registo</span>
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="pt-2 text-center border-t border-black/5 dark:border-white/5">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode(authMode === 'login' ? 'register' : 'login');
+                  setAuthError('');
+                }}
+                className="text-xs text-amber-800 dark:text-amber-400 font-semibold hover:underline"
+              >
+                {authMode === 'login' 
+                  ? 'Ainda não tem conta? Registe-se aqui' 
+                  : 'Já tem uma conta criada? Iniciar sessão'}
+              </button>
+            </div>
+
+          </div>
+        </main>
+
+        <footer className="text-center py-4 text-xs text-stone-400">
+          Kerygma Devocional &bull; Teologia Sistemática & Exegese Canónica
+        </footer>
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // PAINEL COMPLETO (DESBLOQUEADO APENAS APÓS AUTENTICAÇÃO)
+  // =========================================================================
   return (
     <div className={`min-h-screen transition-colors duration-200 ${currentTheme.bg} ${currentTheme.textPrimary}`}>
       
@@ -289,13 +537,13 @@ export default function App() {
         </div>
       )}
 
-      {/* Cabeçalho */}
+      {/* Cabeçalho do Painel Autenticado */}
       <header className={`sticky top-0 z-30 backdrop-blur-md border-b ${currentTheme.border} ${theme === 'dark' ? 'bg-[#121316]/90' : 'bg-white/80'}`}>
         <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
           
           <button 
             onClick={() => setViewMode('home')}
-            className="flex items-center space-x-3 text-left hover:opacity-85 transition"
+            className="flex items-center space-x-3 text-left hover:opacity-85 transition cursor-pointer"
             title="Voltar ao início"
           >
             <BookOpen className="w-6 h-6 text-amber-700" />
@@ -306,7 +554,7 @@ export default function App() {
             {viewMode === 'reading' && (
               <button
                 onClick={() => setViewMode('home')}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 hover:bg-black/10 transition"
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 hover:bg-black/10 transition cursor-pointer"
               >
                 <Home className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Início</span>
@@ -315,7 +563,7 @@ export default function App() {
 
             <button
               onClick={() => setIsCalendarOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 hover:bg-black/10 transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 hover:bg-black/10 transition cursor-pointer"
             >
               <Calendar className="w-3.5 h-3.5 text-amber-700" />
               <span>Estudos ({devotionalsList.length})</span>
@@ -323,60 +571,50 @@ export default function App() {
 
             {/* Alternador de Tema */}
             <div className="flex bg-black/5 dark:bg-white/5 p-1 rounded-lg border border-black/10 dark:border-white/10">
-              <button onClick={() => setTheme('light')} className={`p-1.5 rounded ${theme === 'light' ? 'bg-white shadow-sm' : ''}`} title="Modo Claro">
+              <button onClick={() => setTheme('light')} className={`p-1.5 rounded cursor-pointer ${theme === 'light' ? 'bg-white shadow-xs' : ''}`} title="Modo Claro">
                 <Sun className="w-4 h-4 text-amber-600" />
               </button>
-              <button onClick={() => setTheme('sepia')} className={`p-1.5 rounded ${theme === 'sepia' ? 'bg-[#EAE1D3] shadow-sm' : ''}`} title="Modo Sépia">
+              <button onClick={() => setTheme('sepia')} className={`p-1.5 rounded cursor-pointer ${theme === 'sepia' ? 'bg-[#EAE1D3] shadow-xs' : ''}`} title="Modo Sépia">
                 <Coffee className="w-4 h-4 text-amber-900" />
               </button>
-              <button onClick={() => setTheme('dark')} className={`p-1.5 rounded ${theme === 'dark' ? 'bg-zinc-800 shadow-sm' : ''}`} title="Modo Escuro">
+              <button onClick={() => setTheme('dark')} className={`p-1.5 rounded cursor-pointer ${theme === 'dark' ? 'bg-zinc-800 shadow-xs' : ''}`} title="Modo Escuro">
                 <Moon className="w-4 h-4 text-blue-400" />
               </button>
             </div>
 
-            {/* Tamanho da Fonte */}
+            {/* Ajuste de Fonte */}
             {viewMode === 'reading' && (
               <div className="hidden sm:flex bg-black/5 dark:bg-white/5 p-1 rounded-lg border border-black/10 dark:border-white/10 text-xs font-semibold">
-                <button onClick={() => setFontSize('sm')} className={`px-2 py-1 rounded ${fontSize === 'sm' ? 'bg-white/20' : ''}`}>A-</button>
-                <button onClick={() => setFontSize('base')} className={`px-2 py-1 rounded ${fontSize === 'base' ? 'bg-white/20' : ''}`}>A</button>
-                <button onClick={() => setFontSize('lg')} className={`px-2 py-1 rounded ${fontSize === 'lg' ? 'bg-white/20' : ''}`}>A+</button>
+                <button onClick={() => setFontSize('sm')} className={`px-2 py-1 rounded cursor-pointer ${fontSize === 'sm' ? 'bg-white/20' : ''}`}>A-</button>
+                <button onClick={() => setFontSize('base')} className={`px-2 py-1 rounded cursor-pointer ${fontSize === 'base' ? 'bg-white/20' : ''}`}>A</button>
+                <button onClick={() => setFontSize('lg')} className={`px-2 py-1 rounded cursor-pointer ${fontSize === 'lg' ? 'bg-white/20' : ''}`}>A+</button>
               </div>
             )}
 
-            {/* Favorito */}
+            {/* Marcador de Favorito */}
             {viewMode === 'reading' && currentDevotional && (
               <button 
                 onClick={toggleBookmark} 
-                className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition"
+                className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition cursor-pointer"
                 title="Favoritar estudo"
               >
                 <Bookmark className={`w-5 h-5 ${isBookmarked ? 'fill-amber-600 text-amber-600' : ''}`} />
               </button>
             )}
 
-            {/* Autenticação / Perfil */}
-            {currentUser ? (
-              <div className="flex items-center gap-2 pl-2 border-l border-black/10 dark:border-white/10">
-                <span className="text-xs font-semibold hidden md:inline truncate max-w-[90px]">
-                  {currentUser.name}
-                </span>
-                <button
-                  onClick={handleLogout}
-                  className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-stone-500 hover:text-red-600 transition"
-                  title="Sair da conta"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
-              </div>
-            ) : (
+            {/* Utilizador com sessão iniciada e botão Sair */}
+            <div className="flex items-center gap-2 pl-2 border-l border-black/10 dark:border-white/10">
+              <span className="text-xs font-semibold hidden md:inline truncate max-w-[90px]">
+                {currentUser.name}
+              </span>
               <button
-                onClick={() => setIsAuthModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-800 text-white hover:bg-amber-900 transition shadow-xs"
+                onClick={handleLogout}
+                className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-stone-500 hover:text-red-600 transition cursor-pointer"
+                title="Terminar sessão"
               >
-                <UserIcon className="w-3.5 h-3.5" />
-                <span>Entrar</span>
+                <LogOut className="w-4 h-4" />
               </button>
-            )}
+            </div>
           </div>
         </div>
       </header>
@@ -385,8 +623,8 @@ export default function App() {
       {viewMode === 'home' && (
         <main className="max-w-3xl mx-auto px-4 py-8 space-y-8 animate-in fade-in duration-300">
           
-          {/* Card: Devocional Inteligente do Dia */}
-          <section className={`p-6 sm:p-8 rounded-3xl border shadow-sm ${currentTheme.card} relative overflow-hidden`}>
+          {/* Card: Devocional do Dia por IA */}
+          <section className={`p-6 sm:p-8 rounded-3xl border shadow-xs ${currentTheme.card} relative overflow-hidden`}>
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 mb-2">
               <Sparkles className="w-4 h-4" /> Devocional Inteligente do Dia
             </div>
@@ -404,7 +642,7 @@ export default function App() {
                 <div className="flex flex-wrap gap-3 pt-2">
                   <button
                     onClick={() => openStudy(todaysStudy.id)}
-                    className="px-5 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl bg-amber-800 text-white hover:bg-amber-900 transition flex items-center gap-2 shadow-md"
+                    className="px-5 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl bg-amber-800 text-white hover:bg-amber-900 transition flex items-center gap-2 shadow-xs cursor-pointer"
                   >
                     <span>Abrir Estudo de Hoje</span>
                     <ArrowRight className="w-4 h-4" />
@@ -417,21 +655,21 @@ export default function App() {
             ) : (
               <div className="space-y-4">
                 <div>
-                  <h2 className="text-2xl sm:text-3xl font-bold font-serif">Alimente sua mente e espírito hoje</h2>
+                  <h2 className="text-2xl sm:text-3xl font-bold font-serif">Alimente a sua mente e espírito hoje</h2>
                   <p className={`text-sm ${currentTheme.textSecondary} mt-1 leading-relaxed`}>
-                    A inteligência artificial prepara um estudo novo todos os dias com exegese bíblica nos originais, teologia clássica, reflexão profunda e desafios práticos para a sua vida.
+                    A inteligência artificial prepara um estudo novo todos os dias com exegese bíblica nos originais, teologia clássica, reflexão aprofundada e desafios práticos para a sua vida.
                   </p>
                 </div>
 
                 <button
                   onClick={() => handleGenerateStudy()}
                   disabled={isGenerating}
-                  className="px-6 py-3 text-xs sm:text-sm font-bold uppercase tracking-wider rounded-xl bg-amber-800 text-white hover:bg-amber-900 disabled:opacity-50 transition flex items-center gap-2 shadow-md"
+                  className="px-6 py-3 text-xs sm:text-sm font-bold uppercase tracking-wider rounded-xl bg-amber-800 text-white hover:bg-amber-900 disabled:opacity-50 transition flex items-center gap-2 shadow-xs cursor-pointer"
                 >
                   {isGenerating ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Gerando Estudo e Desafios de Hoje...</span>
+                      <span>A gerar estudo e desafios de hoje...</span>
                     </>
                   ) : (
                     <>
@@ -448,12 +686,12 @@ export default function App() {
           <section className={`p-5 rounded-2xl border ${currentTheme.card} space-y-3`}>
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-stone-500">
               <Target className="w-4 h-4 text-amber-700" />
-              <span>Ou estude uma passagem específica</span>
+              <span>Ou estude uma passagem bíblica específica</span>
             </div>
             <div className="flex gap-2">
               <input
                 type="text"
-                placeholder="Ex: Romanos 8:1-4, Tiago 1 ou A Soberania de Deus..."
+                placeholder="Ex: Romanos 8:1-4, Hebreus 6:10 ou A Soberania de Deus..."
                 value={customPassageInput}
                 onChange={(e) => setCustomPassageInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -465,23 +703,23 @@ export default function App() {
               <button
                 onClick={() => handleGenerateStudy(customPassageInput)}
                 disabled={isGenerating || !customPassageInput.trim()}
-                className="px-4 py-2 text-xs font-semibold rounded-xl bg-stone-800 text-white dark:bg-stone-200 dark:text-stone-900 disabled:opacity-50 transition flex items-center gap-1.5"
+                className="px-4 py-2 text-xs font-semibold rounded-xl bg-stone-800 text-white dark:bg-stone-200 dark:text-stone-900 disabled:opacity-50 transition flex items-center gap-1.5 cursor-pointer"
               >
                 {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span>Estudar</span>}
               </button>
             </div>
           </section>
 
-          {/* Estudos Salvos */}
+          {/* Lista de Estudos Guardados */}
           <section className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold uppercase tracking-wider text-stone-500">
-                Seus Estudos Salvos ({devotionalsList.length})
+                Seus Estudos Guardados ({devotionalsList.length})
               </h3>
               {devotionalsList.length > 0 && (
                 <button 
                   onClick={() => setIsCalendarOpen(true)}
-                  className="text-xs text-amber-700 font-semibold hover:underline"
+                  className="text-xs text-amber-700 font-semibold hover:underline cursor-pointer"
                 >
                   Ver todos
                 </button>
@@ -490,7 +728,7 @@ export default function App() {
 
             {devotionalsList.length === 0 ? (
               <div className="p-8 text-center rounded-2xl border border-dashed border-black/10 dark:border-white/10 text-xs text-stone-400">
-                Você ainda não gerou nenhum estudo. Clique em "Gerar Devocional de Hoje" para começar!
+                Ainda não gerou nenhum estudo. Clique em "Gerar Devocional de Hoje" para iniciar.
               </div>
             ) : (
               <div className="grid gap-3 sm:grid-cols-2">
@@ -536,7 +774,7 @@ export default function App() {
           <div className="flex flex-wrap items-center justify-between gap-3 text-sm pb-4 border-b border-black/10 dark:border-white/10">
             <button
               onClick={() => setViewMode('home')}
-              className="flex items-center gap-1.5 text-xs font-semibold text-stone-500 hover:text-stone-900 dark:hover:text-stone-100 transition"
+              className="flex items-center gap-1.5 text-xs font-semibold text-stone-500 hover:text-stone-900 dark:hover:text-stone-100 transition cursor-pointer"
             >
               <ChevronLeft className="w-4 h-4" /> Voltar ao Início
             </button>
@@ -561,7 +799,7 @@ export default function App() {
           {currentDevotional.historicalRedemptiveContext && (
             <section className={`p-5 rounded-2xl border ${currentTheme.card} space-y-2`}>
               <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-800 dark:text-amber-400">
-                <Compass className="w-4 h-4" /> Panorama & Contexto Canônico
+                <Compass className="w-4 h-4" /> Panorama & Contexto Canónico
               </div>
               <p className={`text-sm leading-relaxed ${currentTheme.textSecondary} font-reading text-justify`}>
                 {currentDevotional.historicalRedemptiveContext}
@@ -570,7 +808,7 @@ export default function App() {
           )}
 
           {/* Texto Bíblico Base */}
-          <section className={`p-6 sm:p-8 rounded-2xl border shadow-sm ${currentTheme.card}`}>
+          <section className={`p-6 sm:p-8 rounded-2xl border shadow-xs ${currentTheme.card}`}>
             <div className="flex items-center justify-between mb-4">
               <span className="text-xs font-bold uppercase tracking-widest text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
                 <ScrollText className="w-4 h-4" /> Texto Bíblico ({currentDevotional.scripture?.version || 'NVT'})
@@ -604,7 +842,7 @@ export default function App() {
             <section className={`rounded-2xl border overflow-hidden ${currentTheme.card}`}>
               <button 
                 onClick={() => setShowExegesis(!showExegesis)}
-                className="w-full p-5 flex items-center justify-between text-left font-semibold hover:bg-black/5 dark:hover:bg-white/5 transition"
+                className="w-full p-5 flex items-center justify-between text-left font-semibold hover:bg-black/5 dark:hover:bg-white/5 transition cursor-pointer"
               >
                 <div className="flex items-center space-x-2.5">
                   <Languages className="w-5 h-5 text-amber-700 dark:text-amber-400" />
@@ -667,7 +905,7 @@ export default function App() {
             <section className={`rounded-2xl border overflow-hidden ${currentTheme.card}`}>
               <button 
                 onClick={() => setShowConfessions(!showConfessions)}
-                className="w-full p-5 flex items-center justify-between text-left font-semibold hover:bg-black/5 dark:hover:bg-white/5 transition"
+                className="w-full p-5 flex items-center justify-between text-left font-semibold hover:bg-black/5 dark:hover:bg-white/5 transition cursor-pointer"
               >
                 <div className="flex items-center space-x-2.5">
                   <FileCheck2 className="w-5 h-5 text-amber-700 dark:text-amber-400" />
@@ -699,7 +937,7 @@ export default function App() {
             <section className={`rounded-2xl border overflow-hidden ${currentTheme.card}`}>
               <button 
                 onClick={() => setShowHistory(!showHistory)}
-                className="w-full p-5 flex items-center justify-between text-left font-semibold hover:bg-black/5 dark:hover:bg-white/5 transition"
+                className="w-full p-5 flex items-center justify-between text-left font-semibold hover:bg-black/5 dark:hover:bg-white/5 transition cursor-pointer"
               >
                 <div className="flex items-center space-x-2.5">
                   <History className="w-5 h-5 text-amber-700 dark:text-amber-400" />
@@ -731,12 +969,12 @@ export default function App() {
 
           {/* Desafios Práticos para a Vida */}
           {currentDevotional.practicalChallenges?.length > 0 && (
-            <section className={`p-6 sm:p-8 rounded-3xl border shadow-sm ${currentTheme.card} space-y-4`}>
+            <section className={`p-6 sm:p-8 rounded-3xl border shadow-xs ${currentTheme.card} space-y-4`}>
               <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-amber-700 dark:text-amber-400">
                 <Target className="w-4 h-4" /> Desafios Práticos para a Vida
               </div>
               <p className={`text-xs sm:text-sm ${currentTheme.textSecondary}`}>
-                A teologia bíblica autêntica se manifesta em obediência real. Marque as ações conforme colocá-las em prática:
+                A teologia bíblica autêntica manifesta-se em obediência real. Marque as ações conforme as colocar em prática:
               </p>
 
               <div className="grid gap-3 pt-2">
@@ -752,7 +990,7 @@ export default function App() {
                           : 'bg-black/5 dark:bg-white/5 border-black/5 dark:border-white/5 hover:bg-black/10'
                       }`}
                     >
-                      <button className="mt-0.5 text-stone-500 hover:text-stone-900 dark:hover:text-stone-100">
+                      <button className="mt-0.5 text-stone-500 hover:text-stone-900 dark:hover:text-stone-100 cursor-pointer">
                         {isDone ? (
                           <CheckSquare className="w-5 h-5 text-emerald-600" />
                         ) : (
@@ -819,14 +1057,14 @@ export default function App() {
               <div className="flex items-center justify-between">
                 <button 
                   onClick={handleSaveNote}
-                  className="px-4 py-2 text-xs font-semibold rounded-lg bg-stone-800 text-white dark:bg-stone-200 dark:text-stone-900 hover:opacity-90 transition"
+                  className="px-4 py-2 text-xs font-semibold rounded-lg bg-stone-800 text-white dark:bg-stone-200 dark:text-stone-900 hover:opacity-90 transition cursor-pointer"
                 >
                   {savedNoteStatus ? 'Anotação Guardada!' : 'Guardar no Diário'}
                 </button>
 
                 <button
                   onClick={handleToggleCompleted}
-                  className={`px-5 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl flex items-center gap-2 transition shadow-sm ${
+                  className={`px-5 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl flex items-center gap-2 transition shadow-xs cursor-pointer ${
                     isCompleted 
                       ? 'bg-emerald-600 text-white' 
                       : 'bg-amber-800 text-white hover:bg-amber-900'
@@ -842,14 +1080,14 @@ export default function App() {
         </main>
       )}
 
-      {/* Modal de Conclusão e Retorno Automático à Home */}
+      {/* Modal de Conclusão e Regresso Automático */}
       {showCompletionModal && currentDevotional && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
           <div className={`w-full max-w-md rounded-3xl border p-8 shadow-2xl ${currentTheme.card} text-center space-y-5 relative`}>
             
             <button 
               onClick={handleFinishAndReturnHome}
-              className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-black/10 transition"
+              className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-black/10 transition cursor-pointer"
             >
               <X className="w-5 h-5 text-stone-400" />
             </button>
@@ -864,7 +1102,7 @@ export default function App() {
               </div>
               <h3 className="text-2xl font-bold font-serif">Devocional Concluído</h3>
               <p className={`mt-2 text-xs sm:text-sm ${currentTheme.textSecondary} leading-relaxed`}>
-                Você completou o estudo de <strong>"{currentDevotional.title}"</strong> ({currentDevotional.scripture?.reference}). Não esqueça de colocar os desafios em prática hoje!
+                Completou o estudo de <strong>"{currentDevotional.title}"</strong> ({currentDevotional.scripture?.reference}). Lembre-se de colocar os desafios em prática ao longo do dia!
               </p>
             </div>
 
@@ -874,10 +1112,10 @@ export default function App() {
 
             <button
               onClick={handleFinishAndReturnHome}
-              className="w-full py-3.5 text-xs font-bold uppercase tracking-wider rounded-xl bg-amber-800 text-white hover:bg-amber-900 transition shadow-md flex items-center justify-center gap-2"
+              className="w-full py-3.5 text-xs font-bold uppercase tracking-wider rounded-xl bg-amber-800 text-white hover:bg-amber-900 transition shadow-xs flex items-center justify-center gap-2 cursor-pointer"
             >
               <Home className="w-4 h-4" />
-              <span>Voltar à Tela Inicial</span>
+              <span>Voltar ao Painel Inicial</span>
             </button>
           </div>
         </div>
@@ -893,7 +1131,7 @@ export default function App() {
                 <Calendar className="w-5 h-5 text-amber-700" />
                 <h3 className="font-serif font-bold text-lg">Índice & Histórico de Estudos</h3>
               </div>
-              <button onClick={() => setIsCalendarOpen(false)} className="p-1.5 rounded-lg hover:bg-black/10 transition">
+              <button onClick={() => setIsCalendarOpen(false)} className="p-1.5 rounded-lg hover:bg-black/10 transition cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -914,7 +1152,7 @@ export default function App() {
                 <button
                   key={locus}
                   onClick={() => setSelectedLocus(locus)}
-                  className={`px-3 py-1 rounded-full whitespace-nowrap transition font-medium ${
+                  className={`px-3 py-1 rounded-full whitespace-nowrap transition font-medium cursor-pointer ${
                     selectedLocus === locus
                       ? 'bg-amber-800 text-white'
                       : 'bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 hover:bg-black/10'
@@ -926,7 +1164,7 @@ export default function App() {
 
               <button
                 onClick={() => setFilterOnlyBookmarks(!filterOnlyBookmarks)}
-                className={`flex items-center gap-1 px-3 py-1 rounded-full whitespace-nowrap transition font-medium ${
+                className={`flex items-center gap-1 px-3 py-1 rounded-full whitespace-nowrap transition font-medium cursor-pointer ${
                   filterOnlyBookmarks
                     ? 'bg-amber-700 text-white'
                     : 'bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 hover:bg-black/10'
@@ -951,7 +1189,7 @@ export default function App() {
                     <button
                       key={dev.id}
                       onClick={() => openStudy(dev.id)}
-                      className="w-full text-left p-3 rounded-xl border transition flex items-center justify-between border-black/5 dark:border-white/5 hover:bg-black/5"
+                      className="w-full text-left p-3 rounded-xl border transition flex items-center justify-between border-black/5 dark:border-white/5 hover:bg-black/5 cursor-pointer"
                     >
                       <div className="pr-2">
                         <div className="flex items-center gap-2 text-xs text-stone-500">
@@ -980,13 +1218,6 @@ export default function App() {
           </div>
         </div>
       )}
-
-      {/* Modal de Autenticação (Login / Cadastro SQLite) */}
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
-        onLoginSuccess={(user) => setCurrentUser(user)}
-      />
 
     </div>
   );
