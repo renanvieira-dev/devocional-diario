@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import type { DevotionalDay } from '../types/devotional';
+import { type DevotionalDay } from '../types/devotional';
 import type { CellStudyInsight } from '../types/cellStudy';
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
@@ -226,21 +226,22 @@ export function fileToBase64(file: File): Promise<string> {
 export async function analyzeCellStudyPdf(file: File): Promise<CellStudyInsight> {
   const base64Data = await fileToBase64(file);
 
-  const prompt = `És um pastor e mentor experiente em liderança de pequenos grupos e células.
-Analisa o PDF anexado com o estudo/esboço e gera um GUIA COMPLETO DE MINISTRAÇÃO PARA CÉLULA.
+  const prompt = `És um mentor experiente de líderes de células e pequenos grupos.
+Analisa o PDF anexado e gera um ROTEIRO INTEGRADO DE MINISTRAÇÃO.
 
-Diretrizes:
-- Extrai o texto bíblico principal e o tema central do documento.
-- Cria um Quebra-Gelo inteligente que introduza o tema de forma leve e participativa.
-- Divide a mensagem em tópicos claros e objetivos (máximo 15 a 20 minutos de exposição).
-- Para CADA tópico, fornece uma analogia/exemplo prático do quotidiano (trabalho, rotina, tecnologia, relacionamentos) que torne o conceito fácil de compreender.
-- Fornece 3 a 4 perguntas abertas que promovam diálogo genuíno no grupo.
-- Adiciona referências bíblicas complementares que enriqueçam o tema.
-- Um desafio prático semanal para a célula e direcionamento de oração.`;
+OBJETIVO CRÍTICO:
+O líder vai usar este roteiro diretamente no telemóvel durante a reunião da célula.
+ELE NÃO DEVE PRECISAR DE ABRIR O PDF EM NENHUM MOMENTO.
+Portanto:
+1. MANTÉM RIGOROSAMENTE A ESTRUTURA E O TEXTO ORIGINAL DO PDF que o líder precisa de ler ou repassar para os irmãos (introdução, versículos, pontos centrais e conclusão).
+2. LOGO ABAIXO DE CADA PONTO DE LEITURA DO PDF, insere os "Adicionais do Líder":
+   - Uma analogia ou exemplo prático do quotidiano atual (trabalho, família, rotina, tecnologia) perfeitamente coerente para ilustrar aquele ponto.
+   - Um insight explicativo pastoral para aprofundar o entendimento.
+   - Uma pergunta aberta e dinâmica de engajamento para o líder fazer à célula logo após ler aquele trecho, evitando que a reunião se torne num monólogo.`;
 
   const schemaConfig = {
     systemInstruction:
-      'És um especialista em homilética pastoral e facilitação de células e pequenos grupos.',
+      'És um pastor e professor de homilética pastoral para pequenos grupos. Preserva fielmente o conteúdo do roteiro original e enriquece cada parte com exemplos práticos.',
     responseMimeType: 'application/json',
     responseSchema: {
       type: Type.OBJECT,
@@ -251,29 +252,52 @@ Diretrizes:
           type: Type.OBJECT,
           properties: {
             title: { type: Type.STRING },
-            description: { type: Type.STRING },
-            question: { type: Type.STRING },
+            instructions: { type: Type.STRING },
+            questionToAsk: { type: Type.STRING },
           },
-          required: ['title', 'description', 'question'],
+          required: ['title', 'instructions', 'questionToAsk'],
         },
-        mainIdea: { type: Type.STRING },
-        outlinePoints: {
+        introSection: {
+          type: Type.OBJECT,
+          properties: {
+            originalTextToRead: { type: Type.STRING },
+            leaderNote: { type: Type.STRING },
+          },
+          required: ['originalTextToRead', 'leaderNote'],
+        },
+        sections: {
           type: Type.ARRAY,
           items: {
             type: Type.OBJECT,
             properties: {
-              point: { type: Type.STRING },
-              explanation: { type: Type.STRING },
-              practicalAnalogy: { type: Type.STRING },
+              heading: { type: Type.STRING },
+              originalTextToRead: { type: Type.STRING },
+              insights: {
+                type: Type.OBJECT,
+                properties: {
+                  practicalAnalogy: { type: Type.STRING },
+                  explanationKey: { type: Type.STRING },
+                  groupQuestion: { type: Type.STRING },
+                },
+                required: ['practicalAnalogy', 'explanationKey', 'groupQuestion'],
+              },
             },
-            required: ['point', 'explanation', 'practicalAnalogy'],
+            required: ['heading', 'originalTextToRead', 'insights'],
           },
         },
-        discussionQuestions: {
-          type: Type.ARRAY,
-          items: { type: Type.STRING },
+        conclusionSection: {
+          type: Type.OBJECT,
+          properties: {
+            originalTextToRead: { type: Type.STRING },
+            lifeApplicationChallenge: { type: Type.STRING },
+            closingPrayerTopics: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+            },
+          },
+          required: ['originalTextToRead', 'lifeApplicationChallenge', 'closingPrayerTopics'],
         },
-        crossReferences: {
+        complementaryPassages: {
           type: Type.ARRAY,
           items: {
             type: Type.OBJECT,
@@ -284,22 +308,15 @@ Diretrizes:
             required: ['ref', 'howItConnects'],
           },
         },
-        lifeChallenge: { type: Type.STRING },
-        closingPrayerTopics: {
-          type: Type.ARRAY,
-          items: { type: Type.STRING },
-        },
       },
       required: [
         'title',
         'passageBase',
         'icebreaker',
-        'mainIdea',
-        'outlinePoints',
-        'discussionQuestions',
-        'crossReferences',
-        'lifeChallenge',
-        'closingPrayerTopics',
+        'introSection',
+        'sections',
+        'conclusionSection',
+        'complementaryPassages',
       ],
     },
   };
@@ -318,7 +335,7 @@ Diretrizes:
 
   for (const modelName of CANDIDATE_MODELS) {
     try {
-      console.log(`A processar PDF de célula com o modelo: ${modelName}...`);
+      console.log(`A processar roteiro integrado com o modelo: ${modelName}...`);
       const response = await ai.models.generateContent({
         model: modelName,
         contents: parts,

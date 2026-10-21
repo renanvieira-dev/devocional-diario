@@ -1,22 +1,43 @@
+import type { ReactNode } from "react";
+
+export interface CellStudySection {
+  heading: string;
+  originalTextToRead: string;
+  insights: {
+    practicalAnalogy: string;
+    explanationKey: string;
+    groupQuestion: string;
+  };
+}
+
 export interface CellStudyInsight {
+  outlinePoints: any;
+  discussionQuestions: any;
+  crossReferences: any;
+  lifeChallenge: ReactNode;
+  closingPrayerTopics: any;
+  mainIdea: ReactNode;
   title: string;
   passageBase: string;
   icebreaker: {
+    description: ReactNode;
+    question: ReactNode;
     title: string;
-    description: string;
-    question: string;
+    instructions: string;
+    questionToAsk: string;
   };
-  mainIdea: string;
-  outlinePoints: {
-    point: string;
-    explanation: string;
-    practicalAnalogy: string;
-  }[];
-  discussionQuestions: string[];
-  crossReferences: {
+  introSection: {
+    originalTextToRead: string;
+    leaderNote: string;
+  };
+  sections: CellStudySection[];
+  conclusionSection: {
+    originalTextToRead: string;
+    lifeApplicationChallenge: string;
+    closingPrayerTopics: string[];
+  };
+  complementaryPassages: {
     ref: string;
     howItConnects: string;
   }[];
-  lifeChallenge: string;
-  closingPrayerTopics: string[];
 }
