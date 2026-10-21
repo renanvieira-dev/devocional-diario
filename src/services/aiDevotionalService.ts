@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import type { DevotionalDay } from '../types/devotional';
 import type { CellStudyInsight } from '../types/cellStudy';
+import type { SermonInsight } from '../types/sermon';
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
@@ -364,6 +365,124 @@ Portanto:
         console.warn(`Tentativa ${attempt} no modelo ${modelName} falhou:`, err?.message || err);
         await new Promise((resolve) => setTimeout(resolve, 1500));
       }
+    }
+  }
+
+  throw lastError;
+}
+
+export async function generateSermonOutline(
+  themeOrTopic?: string,
+  biblicalPassage?: string
+): Promise<SermonInsight> {
+  const promptCriteria = [
+    themeOrTopic ? `Tema do Sermão: "${themeOrTopic}"` : null,
+    biblicalPassage ? `Texto Bíblico Base: "${biblicalPassage}"` : null,
+  ]
+    .filter(Boolean)
+    .join(' | ');
+
+  const prompt = `Você é um pastor sênior e mestre em homilética clássica e contemporânea.
+Crie um ESBOÇO COMPLETO E DENSO DE SERMÃO para púlpito com base nos seguintes dados:
+${promptCriteria || 'Tema: A Graça Transformadora de Cristo | Texto: Efésios 2:1-10'}
+
+Critérios Homiléticos Obrigatórios:
+- Proposição Central: Defina uma "Grande Ideia" clara, memorável e bíblica.
+- Introdução: Crie um gancho envolvente que conecte uma dor/desafio real da rotina contemporânea com o texto sagrado.
+- Desenvolvimento (3 pontos principais encadeados): Para cada ponto, forneça o fundamento bíblico, uma analogia/ilustração vívida do dia a dia e uma aplicação direta à vida da congregação.
+- Conclusão: Recapitulação concisa, apelo pastoral direto e direcionamento prático de oração.`;
+
+  const schemaConfig = {
+    systemInstruction:
+      'Você é um professor de homilética pastoral focado em pregação expositiva e bíblica.',
+    responseMimeType: 'application/json',
+    responseSchema: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING },
+        theme: { type: Type.STRING },
+        biblicalText: { type: Type.STRING },
+        centralProposition: { type: Type.STRING },
+        introduction: {
+          type: Type.OBJECT,
+          properties: {
+            hook: { type: Type.STRING },
+            context: { type: Type.STRING },
+            transitionToText: { type: Type.STRING },
+          },
+          required: ['hook', 'context', 'transitionToText'],
+        },
+        points: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              heading: { type: Type.STRING },
+              biblicalSupport: { type: Type.STRING },
+              contemporaryAnalogy: { type: Type.STRING },
+              pastoralApplication: { type: Type.STRING },
+            },
+            required: [
+              'heading',
+              'biblicalSupport',
+              'contemporaryAnalogy',
+              'pastoralApplication',
+            ],
+          },
+        },
+        conclusion: {
+          type: Type.OBJECT,
+          properties: {
+            recap: { type: Type.STRING },
+            pastoralAppeal: { type: Type.STRING },
+            closingPrayerDirection: { type: Type.STRING },
+          },
+          required: ['recap', 'pastoralAppeal', 'closingPrayerDirection'],
+        },
+        complementaryPassages: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              ref: { type: Type.STRING },
+              purpose: { type: Type.STRING },
+            },
+            required: ['ref', 'purpose'],
+          },
+        },
+      },
+      required: [
+        'title',
+        'theme',
+        'biblicalText',
+        'centralProposition',
+        'introduction',
+        'points',
+        'conclusion',
+        'complementaryPassages',
+      ],
+    },
+  };
+
+  let lastError: any = null;
+
+  for (const modelName of CANDIDATE_MODELS) {
+    try {
+      console.log(`Gerando esboço de sermão com o modelo: ${modelName}...`);
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: prompt,
+        config: schemaConfig,
+      });
+
+      const parsed = JSON.parse(response.text || '{}') as SermonInsight;
+      parsed.id = parsed.id || `sermon_${Date.now()}`;
+      parsed.createdAt = parsed.createdAt || new Date().toISOString().split('T')[0];
+      return parsed;
+    } catch (err: any) {
+      console.warn(`Tentativa de sermão no modelo ${modelName} falhou:`, err?.message || err);
+      lastError = err;
+      await new Promise((resolve) => setTimeout(resolve, 1500));
     }
   }
 

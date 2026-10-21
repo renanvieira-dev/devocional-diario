@@ -34,10 +34,12 @@ import {
   User as UserIcon,
   LogIn,
   UserPlus,
-  Users
+  Users,
+  Mic
 } from 'lucide-react';
 import { generateTheologicalStudy } from './services/aiDevotionalService';
 import { CellLeaderView } from './components/CellLeaderView';
+import { SermonView } from './components/SermonView';
 import type {
   DevotionalDay,
   ThemeMode,
@@ -53,7 +55,8 @@ export default function App() {
     return saved ? JSON.parse(saved) : null;
   });
 
-  const [activeTab, setActiveTab] = useState<'devotional' | 'cell'>('devotional');
+  // Gestão das 3 abas principais
+  const [activeTab, setActiveTab] = useState<'devotional' | 'cell' | 'sermon'>('devotional');
 
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authName, setAuthName] = useState('');
@@ -285,7 +288,7 @@ export default function App() {
       setIsCalendarOpen(false);
     } catch (err) {
       console.error(err);
-      alert('Não foi possível gerar o estudo agora. Tenta novamente em instantes.');
+      alert('Não foi possível gerar o estudo agora. Tente novamente em instantes.');
     } finally {
       setIsGenerating(false);
     }
@@ -366,6 +369,7 @@ export default function App() {
 
   const currentTheme = getThemeClasses();
 
+  // TELA DE LOGIN / REGISTO COM PROTEÇÃO DE MARGEM INFERIOR
   if (!currentUser) {
     return (
       <div className={`min-h-[100dvh] flex flex-col justify-between safe-top safe-bottom pb-24 transition-colors duration-200 ${currentTheme.bg} ${currentTheme.textPrimary}`}>
@@ -399,8 +403,8 @@ export default function App() {
               </h2>
               <p className={`text-xs sm:text-sm ${currentTheme.textSecondary} leading-relaxed`}>
                 {authMode === 'login' 
-                  ? 'Inicia sessão para gerar novos estudos diários, consultar o histórico e preparar ministrações para a célula.' 
-                  : 'Cria uma conta para acompanhar o teu progresso diário e preparar os teus estudos.'}
+                  ? 'Inicie sessão para gerar novos estudos diários, preparar células e estruturar sermões de púlpito.' 
+                  : 'Crie uma conta para acompanhar o seu progresso diário e preparar as suas mensagens.'}
               </p>
             </div>
 
@@ -421,7 +425,7 @@ export default function App() {
                     <input
                       type="text"
                       required
-                      placeholder="O teu nome"
+                      placeholder="O seu nome"
                       value={authName}
                       onChange={(e) => setAuthName(e.target.value)}
                       className="w-full pl-10 pr-4 py-2.5 text-xs rounded-xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-black/30 focus:outline-none focus:ring-2 focus:ring-amber-600"
@@ -495,8 +499,8 @@ export default function App() {
                 className="text-xs text-amber-800 dark:text-amber-400 font-semibold hover:underline"
               >
                 {authMode === 'login' 
-                  ? 'Ainda não tens conta? Regista-te aqui' 
-                  : 'Já tens uma conta criada? Inicia sessão'}
+                  ? 'Ainda não tem conta? Registe-se aqui' 
+                  : 'Já tem uma conta criada? Iniciar sessão'}
               </button>
             </div>
           </div>
@@ -610,15 +614,15 @@ export default function App() {
         </div>
       </header>
 
-      {/* Seletor de Abas: Devocional Pessoal vs Ministrar na Célula */}
+      {/* Seletor de Abas: Devocional Pessoal, Célula e Sermões */}
       <div className={`border-b ${currentTheme.border} bg-black/5 dark:bg-white/5 px-4`}>
-        <div className="max-w-4xl mx-auto flex items-center justify-center sm:justify-start gap-2 py-2">
+        <div className="max-w-4xl mx-auto flex items-center justify-center sm:justify-start gap-2 py-2 overflow-x-auto">
           <button
             onClick={() => {
               setActiveTab('devotional');
               setViewMode('home');
             }}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap cursor-pointer ${
               activeTab === 'devotional'
                 ? 'bg-amber-800 text-white shadow-xs'
                 : 'text-stone-500 hover:text-stone-900 dark:hover:text-stone-100'
@@ -630,20 +634,34 @@ export default function App() {
 
           <button
             onClick={() => setActiveTab('cell')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap cursor-pointer ${
               activeTab === 'cell'
                 ? 'bg-amber-800 text-white shadow-xs'
                 : 'text-stone-500 hover:text-stone-900 dark:hover:text-stone-100'
             }`}
           >
             <Users className="w-3.5 h-3.5" />
-            <span>Ministrar na Célula</span>
+            <span>Célula</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('sermon')}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap cursor-pointer ${
+              activeTab === 'sermon'
+                ? 'bg-amber-800 text-white shadow-xs'
+                : 'text-stone-500 hover:text-stone-900 dark:hover:text-stone-100'
+            }`}
+          >
+            <Mic className="w-3.5 h-3.5" />
+            <span>Sermões</span>
           </button>
         </div>
       </div>
 
       {/* Renderização Condicional da Aba Selecionada */}
-      {activeTab === 'cell' ? (
+      {activeTab === 'sermon' ? (
+        <SermonView currentTheme={currentTheme} />
+      ) : activeTab === 'cell' ? (
         <CellLeaderView currentTheme={currentTheme} />
       ) : (
         <>
@@ -681,9 +699,9 @@ export default function App() {
                 ) : (
                   <div className="space-y-4">
                     <div>
-                      <h2 className="text-2xl sm:text-3xl font-bold font-serif">Alimenta a tua mente e espírito hoje</h2>
+                      <h2 className="text-2xl sm:text-3xl font-bold font-serif">Alimente a sua mente e espírito hoje</h2>
                       <p className={`text-sm ${currentTheme.textSecondary} mt-1 leading-relaxed`}>
-                        A inteligência artificial prepara um estudo novo todos os dias com exegese bíblica nos originais, teologia clássica, reflexão aprofundada e desafios práticos para a tua vida.
+                        A inteligência artificial prepara um estudo novo todos os dias com exegese bíblica nos originais, teologia clássica, reflexão aprofundada e desafios práticos para a sua vida.
                       </p>
                     </div>
 
@@ -711,7 +729,7 @@ export default function App() {
               <section className={`p-5 rounded-2xl border ${currentTheme.card} space-y-3`}>
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-stone-500">
                   <Target className="w-4 h-4 text-amber-700" />
-                  <span>Ou estuda uma passagem bíblica específica</span>
+                  <span>Ou estude uma passagem bíblica específica</span>
                 </div>
                 <div className="flex gap-2">
                   <input
@@ -738,7 +756,7 @@ export default function App() {
               <section className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-stone-500">
-                    Os Teus Estudos Guardados ({devotionalsList.length})
+                    Seus Estudos Guardados ({devotionalsList.length})
                   </h3>
                   {devotionalsList.length > 0 && (
                     <button 
@@ -752,7 +770,7 @@ export default function App() {
 
                 {devotionalsList.length === 0 ? (
                   <div className="p-8 text-center rounded-2xl border border-dashed border-black/10 dark:border-white/10 text-xs text-stone-400">
-                    Ainda não geraste nenhum estudo. Clica em "Gerar Devocional de Hoje" para iniciar.
+                    Ainda não gerou nenhum estudo. Clique em "Gerar Devocional de Hoje" para iniciar.
                   </div>
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -774,7 +792,7 @@ export default function App() {
                           </div>
 
                           <div className="flex items-center justify-between pt-3 mt-3 border-t border-black/5 dark:border-white/5 text-xs">
-                            <span className="text-stone-400">Clica para abrir</span>
+                            <span className="text-stone-400">Clique para abrir</span>
                             {isItemCompleted && (
                               <span className="flex items-center gap-1 text-emerald-600 font-semibold">
                                 <Check className="w-3.5 h-3.5" /> Concluído
@@ -790,7 +808,7 @@ export default function App() {
             </main>
           )}
 
-          {/* TELA DE LEITURA */}
+          {/* TELA DE LEITURA DO DEVOCIONAL */}
           {viewMode === 'reading' && currentDevotional && (
             <main className="max-w-3xl mx-auto px-4 py-6 space-y-10 animate-in fade-in duration-300">
               <div className="flex flex-wrap items-center justify-between gap-3 text-sm pb-4 border-b border-black/10 dark:border-white/10">
@@ -989,7 +1007,7 @@ export default function App() {
                     <Target className="w-4 h-4" /> Desafios Práticos para a Vida
                   </div>
                   <p className={`text-xs sm:text-sm ${currentTheme.textSecondary}`}>
-                    A teologia bíblica autêntica manifesta-se em obediência real. Marca as ações conforme as colocares em prática:
+                    A teologia bíblica autêntica manifesta-se em obediência real. Marque as ações conforme as colocar em prática:
                   </p>
 
                   <div className="grid gap-3 pt-2">
@@ -1064,7 +1082,7 @@ export default function App() {
                   <textarea
                     value={userNote}
                     onChange={(e) => setUserNote(e.target.value)}
-                    placeholder="Escreve as tuas reflexões teológicas, desdobramentos de oração ou notas de estudo..."
+                    placeholder="Escreva as suas reflexões teológicas, desdobramentos de oração ou notas de estudo..."
                     rows={5}
                     className="w-full p-4 rounded-xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/20 focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm font-reading"
                   />
@@ -1115,7 +1133,7 @@ export default function App() {
               </div>
               <h3 className="text-2xl font-bold font-serif">Devocional Concluído</h3>
               <p className={`mt-2 text-xs sm:text-sm ${currentTheme.textSecondary} leading-relaxed`}>
-                Completaste o estudo de <strong>"{currentDevotional.title}"</strong> ({currentDevotional.scripture?.reference}). Lembra-te de colocar os desafios em prática ao longo do dia!
+                Completou o estudo de <strong>"{currentDevotional.title}"</strong> ({currentDevotional.scripture?.reference}). Lembre-se de colocar os desafios em prática ao longo do dia!
               </p>
             </div>
 
