@@ -1,5 +1,3 @@
-import type { ReactNode } from "react";
-
 export interface CellStudySection {
   heading: string;
   originalTextToRead: string;
@@ -11,17 +9,11 @@ export interface CellStudySection {
 }
 
 export interface CellStudyInsight {
-  outlinePoints: any;
-  discussionQuestions: any;
-  crossReferences: any;
-  lifeChallenge: ReactNode;
-  closingPrayerTopics: any;
-  mainIdea: ReactNode;
+  id: string; // Identificador único
+  createdAt: string; // Data de criação
   title: string;
   passageBase: string;
   icebreaker: {
-    description: ReactNode;
-    question: ReactNode;
     title: string;
     instructions: string;
     questionToAsk: string;

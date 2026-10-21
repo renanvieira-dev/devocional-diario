@@ -1,10 +1,11 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { type DevotionalDay } from '../types/devotional';
+import type { DevotionalDay } from '../types/devotional';
 import type { CellStudyInsight } from '../types/cellStudy';
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
 
+// Modelos Flash com rota de redundância para evitar bloqueios de tráfego (503)
 const CANDIDATE_MODELS = [
   'gemini-3.7-flash',
   'gemini-3.6-flash',
@@ -13,6 +14,22 @@ const CANDIDATE_MODELS = [
   'gemini-3.1-flash-lite',
 ];
 
+// Converte arquivo PDF local em base64 puro para envio à API Gemini
+export function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64String = (reader.result as string).split(',')[1];
+      resolve(base64String);
+    };
+    reader.onerror = (error) => reject(error);
+    reader.readAsDataURL(file);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 1. GERAÇÃO DO DEVOCIONAL PESSOAL POR IA
+// ---------------------------------------------------------------------------
 export async function generateTheologicalStudy(
   passageOrTopic?: string
 ): Promise<DevotionalDay> {
@@ -211,37 +228,28 @@ Diretrizes:
   throw lastError;
 }
 
-export function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64String = (reader.result as string).split(',')[1];
-      resolve(base64String);
-    };
-    reader.onerror = (error) => reject(error);
-    reader.readAsDataURL(file);
-  });
-}
-
+// ---------------------------------------------------------------------------
+// 2. ANÁLISE DE PDF & ROTEIRO INTEGRADO PARA CÉLULA (TELEPROMPTER)
+// ---------------------------------------------------------------------------
 export async function analyzeCellStudyPdf(file: File): Promise<CellStudyInsight> {
   const base64Data = await fileToBase64(file);
 
-  const prompt = `És um mentor experiente de líderes de células e pequenos grupos.
-Analisa o PDF anexado e gera um ROTEIRO INTEGRADO DE MINISTRAÇÃO.
+  const prompt = `Você é um pastor e mentor experiente de líderes de células e pequenos grupos.
+Analise o PDF anexado com o estudo/esboço e gere um ROTEIRO INTEGRADO DE MINISTRAÇÃO.
 
 OBJETIVO CRÍTICO:
-O líder vai usar este roteiro diretamente no telemóvel durante a reunião da célula.
-ELE NÃO DEVE PRECISAR DE ABRIR O PDF EM NENHUM MOMENTO.
+O líder vai usar este roteiro diretamente no celular durante a reunião da célula.
+ELE NÃO DEVE PRECISAR ABRIR O PDF EM NENHUM MOMENTO.
 Portanto:
-1. MANTÉM RIGOROSAMENTE A ESTRUTURA E O TEXTO ORIGINAL DO PDF que o líder precisa de ler ou repassar para os irmãos (introdução, versículos, pontos centrais e conclusão).
-2. LOGO ABAIXO DE CADA PONTO DE LEITURA DO PDF, insere os "Adicionais do Líder":
-   - Uma analogia ou exemplo prático do quotidiano atual (trabalho, família, rotina, tecnologia) perfeitamente coerente para ilustrar aquele ponto.
+1. MANTENHA RIGOROSAMENTE A ESTRUTURA E O TEXTO ORIGINAL DO PDF que o líder precisa ler ou repassar para os irmãos (introdução, versículos, pontos centrais e conclusão).
+2. LOGO ABAIXO DE CADA PONTO DE LEITURA DO PDF, insira os "Adicionais do Líder":
+   - Uma analogia ou exemplo prático do cotidiano atual (trabalho, família, rotina, tecnologia) perfeitamente coerente para ilustrar aquele ponto.
    - Um insight explicativo pastoral para aprofundar o entendimento.
-   - Uma pergunta aberta e dinâmica de engajamento para o líder fazer à célula logo após ler aquele trecho, evitando que a reunião se torne num monólogo.`;
+   - Uma pergunta aberta e dinâmica de engajamento para o líder fazer à célula logo após ler aquele trecho, evitando que a reunião vire um monólogo.`;
 
   const schemaConfig = {
     systemInstruction:
-      'És um pastor e professor de homilética pastoral para pequenos grupos. Preserva fielmente o conteúdo do roteiro original e enriquece cada parte com exemplos práticos.',
+      'Você é um pastor e professor de homilética pastoral para pequenos grupos. Preserve fielmente o conteúdo do roteiro original e enriqueça cada parte com exemplos práticos.',
     responseMimeType: 'application/json',
     responseSchema: {
       type: Type.OBJECT,
@@ -334,19 +342,28 @@ Portanto:
   let lastError: any = null;
 
   for (const modelName of CANDIDATE_MODELS) {
-    try {
-      console.log(`A processar roteiro integrado com o modelo: ${modelName}...`);
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents: parts,
-        config: schemaConfig,
-      });
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        console.log(`Tentativa ${attempt} de processamento do PDF no modelo: ${modelName}...`);
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: parts,
+          config: schemaConfig,
+        });
 
-      return JSON.parse(response.text || '{}') as CellStudyInsight;
-    } catch (err: any) {
-      console.warn(`Tentativa no modelo ${modelName} falhou:`, err?.message || err);
-      lastError = err;
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+        const parsed = JSON.parse(response.text || '{}') as CellStudyInsight;
+        
+        // Atribui ID único e data para salvar na biblioteca
+        parsed.id = parsed.id || `cell_${Date.now()}`;
+        parsed.createdAt = parsed.createdAt || new Date().toISOString().split('T')[0];
+
+        console.log(`Roteiro de célula gerado com sucesso pelo modelo: ${modelName}`);
+        return parsed;
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`Tentativa ${attempt} no modelo ${modelName} falhou:`, err?.message || err);
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
     }
   }
 
