@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent } from 'react';
+import { useState, useEffect, type ChangeEvent, type MouseEvent } from 'react';
 import { 
   UploadCloud, 
   Users, 
@@ -13,11 +13,12 @@ import {
   ScrollText, 
   HeartHandshake,
   FolderOpen,
-  Edit2,
+  Edit3,
   Check,
   X,
   Trash2,
-  PlusCircle
+  Plus,
+  Calendar
 } from 'lucide-react';
 import { analyzeCellStudyPdf } from '../services/aiDevotionalService';
 import type { CellStudyInsight } from '../types/cellStudy';
@@ -36,34 +37,76 @@ interface CellLeaderViewProps {
 }
 
 export function CellLeaderView({ currentTheme }: CellLeaderViewProps) {
-  // Lista de estudos guardados na Biblioteca
+  // Inicialização e migração de dados do localStorage
   const [library, setLibrary] = useState<CellStudyInsight[]>(() => {
-    const saved = localStorage.getItem('kerygma_cell_library');
-    return saved ? JSON.parse(saved) : [];
+    const savedLib = localStorage.getItem('kerygma_cell_library');
+    if (savedLib) {
+      try {
+        return JSON.parse(savedLib);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    // Migração de estudo legado já gerado anteriormente
+    const legacy = localStorage.getItem('kerygma_active_cell_study');
+    if (legacy) {
+      try {
+        const parsed = JSON.parse(legacy);
+        const migrated: CellStudyInsight = {
+          ...parsed,
+          id: parsed.id || `cell_${Date.now()}`,
+          createdAt: parsed.createdAt || new Date().toISOString().split('T')[0]
+        };
+        localStorage.setItem('kerygma_cell_library', JSON.stringify([migrated]));
+        return [migrated];
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return [];
   });
 
-  // ID do estudo aberto no ecrã
   const [activeStudyId, setActiveStudyId] = useState<string | null>(() => {
-    const saved = localStorage.getItem('kerygma_active_cell_id');
-    return saved || null;
+    const savedId = localStorage.getItem('kerygma_active_cell_id');
+    if (savedId) return savedId;
+    const savedLib = localStorage.getItem('kerygma_cell_library');
+    if (savedLib) {
+      try {
+        const arr = JSON.parse(savedLib);
+        return arr.length > 0 ? arr[0].id : null;
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
   });
 
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  const [showUploadBox, setShowUploadBox] = useState(false);
 
-  // Estados para renomear título
+  // Estados de renomeação
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editedTitle, setEditedTitle] = useState('');
 
-  // Estudo atualmente em exibição
-  const currentStudy: CellStudyInsight | undefined = library.find(s => s.id === activeStudyId) || library[0];
+  // Estudo ativo selecionado
+  const currentStudy: CellStudyInsight | undefined = 
+    library.find(s => s.id === activeStudyId) || library[0];
+
+  useEffect(() => {
+    if (library.length > 0 && !activeStudyId) {
+      setActiveStudyId(library[0].id);
+      localStorage.setItem('kerygma_active_cell_id', library[0].id);
+    }
+  }, [library, activeStudyId]);
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const selected = e.target.files[0];
       if (selected.type !== 'application/pdf') {
-        alert('Por favor, seleciona um ficheiro em formato PDF.');
+        alert('Por favor, selecione um arquivo em formato PDF.');
         return;
       }
       setFile(selected);
@@ -76,17 +119,24 @@ export function CellLeaderView({ currentTheme }: CellLeaderViewProps) {
       setLoading(true);
       const result = await analyzeCellStudyPdf(file);
       
-      const updatedLibrary = [result, ...library];
+      const newStudy: CellStudyInsight = {
+        ...result,
+        id: result.id || `cell_${Date.now()}`,
+        createdAt: result.createdAt || new Date().toISOString().split('T')[0]
+      };
+
+      const updatedLibrary = [newStudy, ...library];
       setLibrary(updatedLibrary);
       localStorage.setItem('kerygma_cell_library', JSON.stringify(updatedLibrary));
       
-      setActiveStudyId(result.id);
-      localStorage.setItem('kerygma_active_cell_id', result.id);
+      setActiveStudyId(newStudy.id);
+      localStorage.setItem('kerygma_active_cell_id', newStudy.id);
       
       setFile(null);
+      setShowUploadBox(false);
     } catch (error) {
       console.error(error);
-      alert('Ocorreu um erro ao processar o PDF. Certifica-te de que o ficheiro não está protegido por palavra-passe.');
+      alert('Erro ao processar o PDF. Verifique se o arquivo não possui senha.');
     } finally {
       setLoading(false);
     }
@@ -108,16 +158,33 @@ export function CellLeaderView({ currentTheme }: CellLeaderViewProps) {
     setIsEditingTitle(false);
   };
 
-  const deleteStudy = (id: string, e: React.MouseEvent) => {
+  const handleDeleteActiveStudy = () => {
+    if (!currentStudy) return;
+    if (!window.confirm(`Tem certeza que deseja excluir o estudo "${currentStudy.title}"?`)) return;
+
+    const updated = library.filter(item => item.id !== currentStudy.id);
+    setLibrary(updated);
+    localStorage.setItem('kerygma_cell_library', JSON.stringify(updated));
+
+    const nextStudy = updated.length > 0 ? updated[0].id : null;
+    setActiveStudyId(nextStudy);
+    if (nextStudy) localStorage.setItem('kerygma_active_cell_id', nextStudy);
+    else localStorage.removeItem('kerygma_active_cell_id');
+  };
+
+  const handleDeleteFromLibrary = (id: string, e: MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('Desejas realmente eliminar este estudo da tua biblioteca?')) return;
+    const itemToDelete = library.find(item => item.id === id);
+    if (!window.confirm(`Excluir "${itemToDelete?.title || 'este estudo'}"?`)) return;
+
     const updated = library.filter(item => item.id !== id);
     setLibrary(updated);
     localStorage.setItem('kerygma_cell_library', JSON.stringify(updated));
+
     if (activeStudyId === id) {
-      const nextId = updated.length > 0 ? updated[0].id : null;
-      setActiveStudyId(nextId);
-      if (nextId) localStorage.setItem('kerygma_active_cell_id', nextId);
+      const nextStudy = updated.length > 0 ? updated[0].id : null;
+      setActiveStudyId(nextStudy);
+      if (nextStudy) localStorage.setItem('kerygma_active_cell_id', nextStudy);
       else localStorage.removeItem('kerygma_active_cell_id');
     }
   };
@@ -125,78 +192,128 @@ export function CellLeaderView({ currentTheme }: CellLeaderViewProps) {
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-8 animate-in fade-in duration-300">
       
-      {/* Barra de Ações: Nova Importação & Biblioteca */}
-      <div className="flex items-center justify-between gap-2 pb-4 border-b border-black/10 dark:border-white/10">
+      {/* BARRA SUPERIOR DE AÇÕES */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-black/10 dark:border-white/10">
         <div className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-700 dark:text-amber-400">
+          <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-700 dark:text-amber-400">
             <Users className="w-5 h-5" />
           </div>
           <div>
             <h2 className="text-base sm:text-lg font-bold font-serif leading-tight">Estudos de Célula</h2>
-            <p className="text-[11px] text-stone-500">Roteiro de ministração & dinâmicas</p>
+            <p className="text-[11px] text-stone-500">Roteiro integrado & teleprompter</p>
           </div>
         </div>
 
-        <button
-          onClick={() => setIsLibraryOpen(true)}
-          className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 hover:bg-black/10 transition cursor-pointer"
-        >
-          <FolderOpen className="w-3.5 h-3.5 text-amber-700" />
-          <span>Biblioteca ({library.length})</span>
-        </button>
-      </div>
-
-      {/* Caixa de Importação de Novo PDF */}
-      <div className={`p-5 rounded-3xl border ${currentTheme.card} shadow-xs space-y-4`}>
-        <div className="border-2 border-dashed border-black/15 dark:border-white/15 rounded-2xl p-5 text-center space-y-2 bg-black/5 dark:bg-white/5">
-          <UploadCloud className="w-8 h-8 mx-auto text-amber-700 opacity-80" />
-          <div>
-            <label className="text-xs sm:text-sm font-semibold cursor-pointer text-amber-800 dark:text-amber-400 hover:underline">
-              <span>{file ? file.name : 'Clica para carregar o PDF da semana'}</span>
-              <input 
-                type="file" 
-                accept="application/pdf" 
-                onChange={handleFileChange} 
-                className="hidden" 
-              />
-            </label>
-            <p className="text-[11px] text-stone-400 mt-0.5">
-              {file ? 'Ficheiro selecionado! Clica em gerar abaixo.' : 'Gera o roteiro preservando o texto e adicionando analogias e perguntas.'}
-            </p>
-          </div>
-        </div>
-
-        {file && (
+        <div className="flex items-center gap-2">
           <button
-            onClick={handleProcessPdf}
-            disabled={loading}
-            className="w-full py-2.5 text-xs sm:text-sm font-bold uppercase tracking-wider rounded-xl bg-amber-800 text-white hover:bg-amber-900 disabled:opacity-50 transition flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+            onClick={() => setIsLibraryOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl bg-amber-800/10 text-amber-800 dark:text-amber-300 border border-amber-800/20 hover:bg-amber-800/20 transition cursor-pointer shadow-xs"
           >
-            {loading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>A analisar o PDF e a salvar na biblioteca...</span>
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4" />
-                <span>Gerar & Guardar na Biblioteca</span>
-              </>
-            )}
+            <FolderOpen className="w-4 h-4 text-amber-700 dark:text-amber-400" />
+            <span>Biblioteca ({library.length})</span>
           </button>
-        )}
+
+          <button
+            onClick={() => setShowUploadBox(!showUploadBox)}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl bg-stone-800 text-white dark:bg-stone-200 dark:text-stone-900 hover:opacity-90 transition cursor-pointer shadow-xs"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Novo Estudo</span>
+          </button>
+        </div>
       </div>
 
-      {/* ROTEIRO ATIVO COM RENOMEAÇÃO */}
+      {/* ÁREA DE UPLOAD (EXIBIDA QUANDO NÃO HÁ ESTUDO OU AO CLICAR EM NOVO ESTUDO) */}
+      {(showUploadBox || library.length === 0) && (
+        <div className={`p-6 rounded-3xl border ${currentTheme.card} shadow-xs space-y-4 animate-in fade-in`}>
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+              Carregar Novo Estudo em PDF
+            </h3>
+            {library.length > 0 && (
+              <button 
+                onClick={() => setShowUploadBox(false)}
+                className="p-1 rounded-lg hover:bg-black/10 text-stone-400"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          <div className="border-2 border-dashed border-black/15 dark:border-white/15 rounded-2xl p-6 text-center space-y-3 bg-black/5 dark:bg-white/5">
+            <UploadCloud className="w-9 h-9 mx-auto text-amber-700 opacity-80" />
+            <div>
+              <label className="text-xs sm:text-sm font-semibold cursor-pointer text-amber-800 dark:text-amber-400 hover:underline">
+                <span>{file ? file.name : 'Clique para selecionar o arquivo PDF'}</span>
+                <input 
+                  type="file" 
+                  accept="application/pdf" 
+                  onChange={handleFileChange} 
+                  className="hidden" 
+                />
+              </label>
+              <p className="text-[11px] text-stone-400 mt-1">
+                {file ? 'PDF pronto para envio!' : 'O sistema manterá o texto original e inserirá analogias e perguntas abaixo de cada ponto.'}
+              </p>
+            </div>
+          </div>
+
+          {file && (
+            <button
+              onClick={handleProcessPdf}
+              disabled={loading}
+              className="w-full py-3 text-xs sm:text-sm font-bold uppercase tracking-wider rounded-xl bg-amber-800 text-white hover:bg-amber-900 disabled:opacity-50 transition flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Analisando PDF e montando roteiro...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  <span>Gerar e Salvar na Biblioteca</span>
+                </>
+              )}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ESTUDO ATIVO NA TELA */}
       {currentStudy ? (
         <div className="space-y-10 animate-in fade-in duration-300">
           
-          {/* Cabeçalho do Estudo com Função de Renomear */}
-          <div className="border-b pb-5 border-black/10 dark:border-white/10 space-y-2">
-            <span className="text-xs font-mono font-bold uppercase tracking-widest text-amber-700">
-              Passagem Base: {currentStudy.passageBase}
-            </span>
+          {/* CABEÇALHO DO ESTUDO: TÍTULO, PASSAGEM E BOTÕES DE RENOMEAR/EXCLUIR */}
+          <div className="p-5 sm:p-6 rounded-3xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-mono font-bold uppercase tracking-widest text-amber-700 dark:text-amber-400">
+                Passagem Base: {currentStudy.passageBase}
+              </span>
 
+              {/* Botões de Ação do Estudo */}
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={startRename}
+                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-black/5 dark:bg-white/10 hover:bg-black/10 transition cursor-pointer"
+                  title="Renomear este estudo"
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" />
+                  <span>Renomear</span>
+                </button>
+
+                <button
+                  onClick={handleDeleteActiveStudy}
+                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 transition cursor-pointer"
+                  title="Excluir este estudo"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Excluir</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Edição de Título Inline */}
             {isEditingTitle ? (
               <div className="flex items-center gap-2 pt-1">
                 <input
@@ -208,40 +325,32 @@ export function CellLeaderView({ currentTheme }: CellLeaderViewProps) {
                     if (e.key === 'Escape') setIsEditingTitle(false);
                   }}
                   autoFocus
-                  className="flex-1 px-3 py-1.5 text-lg font-serif font-bold rounded-xl border border-amber-600 bg-white/70 dark:bg-black/40 focus:outline-none"
+                  placeholder="Novo título para o estudo..."
+                  className="flex-1 px-3 py-2 text-base sm:text-lg font-serif font-bold rounded-xl border border-amber-600 bg-white dark:bg-black focus:outline-none"
                 />
                 <button
                   onClick={saveRename}
-                  className="p-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition cursor-pointer"
-                  title="Guardar Título"
+                  className="p-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition cursor-pointer"
+                  title="Salvar Novo Título"
                 >
                   <Check className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => setIsEditingTitle(false)}
-                  className="p-2 rounded-lg bg-stone-300 dark:bg-stone-700 text-stone-700 dark:text-stone-200 transition cursor-pointer"
+                  className="p-2 rounded-xl bg-stone-300 dark:bg-stone-700 text-stone-800 dark:text-stone-200 transition cursor-pointer"
                   title="Cancelar"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
             ) : (
-              <div className="flex items-start justify-between gap-3">
-                <h3 className="text-2xl sm:text-3xl font-bold font-serif leading-tight">
-                  {currentStudy.title}
-                </h3>
-                <button
-                  onClick={startRename}
-                  className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-stone-400 hover:text-amber-700 transition cursor-pointer shrink-0 mt-1"
-                  title="Renomear estudo"
-                >
-                  <Edit2 className="w-4 h-4" />
-                </button>
-              </div>
+              <h3 className="text-2xl sm:text-3xl font-bold font-serif leading-tight">
+                {currentStudy.title}
+              </h3>
             )}
           </div>
 
-          {/* 1. Quebra-Gelo */}
+          {/* 1. Quebra-Gelo Inicial */}
           {currentStudy.icebreaker && (
             <section className={`p-6 rounded-3xl border ${currentTheme.card} shadow-xs space-y-4`}>
               <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
@@ -257,7 +366,7 @@ export function CellLeaderView({ currentTheme }: CellLeaderViewProps) {
             </section>
           )}
 
-          {/* 2. Introdução */}
+          {/* 2. Introdução do PDF */}
           {currentStudy.introSection && (
             <section className="space-y-3">
               <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-stone-500">
@@ -284,7 +393,7 @@ export function CellLeaderView({ currentTheme }: CellLeaderViewProps) {
             </section>
           )}
 
-          {/* 3. Desenvolvimento */}
+          {/* 3. Desenvolvimento com Analogias e Perguntas Embutidas */}
           <div className="space-y-8">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-stone-500 border-b pb-2 border-black/10 dark:border-white/10">
               <BookOpen className="w-4 h-4 text-amber-700" />
@@ -312,7 +421,7 @@ export function CellLeaderView({ currentTheme }: CellLeaderViewProps) {
                   <div className="p-4 rounded-xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 text-xs sm:text-sm space-y-1">
                     <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-400 font-bold uppercase text-[11px] tracking-wider">
                       <Lightbulb className="w-3.5 h-3.5" />
-                      <span>Exemplo do Quotidiano para Explicar Este Ponto:</span>
+                      <span>Exemplo do Cotidiano para Ilustrar Esse Ponto:</span>
                     </div>
                     <p className="italic font-reading text-stone-700 dark:text-stone-300">
                       "{sec.insights.practicalAnalogy}"
@@ -398,19 +507,19 @@ export function CellLeaderView({ currentTheme }: CellLeaderViewProps) {
         </div>
       ) : (
         <div className="p-10 text-center rounded-3xl border border-dashed border-black/15 dark:border-white/15 text-xs text-stone-400">
-          Ainda não tens nenhum roteiro na biblioteca. Carrega o primeiro PDF acima para começar!
+          Nenhum estudo de célula cadastrado. Carregue um PDF acima para iniciar sua biblioteca.
         </div>
       )}
 
-      {/* MODAL: BIBLIOTECA DE ESTUDOS DE CÉLULA */}
+      {/* MODAL: BIBLIOTECA COMPLETA DE ESTUDOS */}
       {isLibraryOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
-          <div className={`w-full max-w-lg rounded-3xl border p-6 shadow-2xl ${currentTheme.card} flex flex-col max-h-[80vh]`}>
+          <div className={`w-full max-w-lg rounded-3xl border p-6 shadow-2xl ${currentTheme.card} flex flex-col max-h-[85vh]`}>
             
             <div className="flex items-center justify-between pb-4 border-b border-black/10 dark:border-white/10">
               <div className="flex items-center gap-2">
                 <FolderOpen className="w-5 h-5 text-amber-700" />
-                <h3 className="font-serif font-bold text-lg">Biblioteca de Célula</h3>
+                <h3 className="font-serif font-bold text-lg">Biblioteca de Estudos de Célula</h3>
               </div>
               <button 
                 onClick={() => setIsLibraryOpen(false)}
@@ -423,7 +532,7 @@ export function CellLeaderView({ currentTheme }: CellLeaderViewProps) {
             <div className="mt-4 overflow-y-auto space-y-2 pr-1 flex-1">
               {library.length === 0 ? (
                 <div className="py-8 text-center text-xs text-stone-400">
-                  Nenhum estudo guardado na biblioteca.
+                  Nenhum estudo arquivado no momento.
                 </div>
               ) : (
                 library.map((item) => (
@@ -432,28 +541,31 @@ export function CellLeaderView({ currentTheme }: CellLeaderViewProps) {
                     onClick={() => {
                       setActiveStudyId(item.id);
                       localStorage.setItem('kerygma_active_cell_id', item.id);
+                      setShowUploadBox(false);
                       setIsLibraryOpen(false);
                     }}
-                    className={`p-3.5 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 ${
+                    className={`p-4 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 ${
                       activeStudyId === item.id
                         ? 'border-amber-600 bg-amber-500/10'
                         : 'border-black/5 dark:border-white/5 hover:bg-black/5'
                     }`}
                   >
-                    <div className="pr-2 min-w-0 flex-1">
-                      <div className="flex items-center gap-2 text-[11px] text-stone-500">
-                        <span className="font-semibold text-amber-700">{item.passageBase}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 text-[11px] text-stone-500 mb-0.5">
+                        <span className="font-semibold text-amber-700 dark:text-amber-400">{item.passageBase}</span>
                         <span>&bull;</span>
-                        <span>{item.createdAt}</span>
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3" /> {item.createdAt}
+                        </span>
                       </div>
-                      <h4 className="font-serif font-medium text-sm mt-0.5 truncate">{item.title}</h4>
+                      <h4 className="font-serif font-semibold text-sm truncate">{item.title}</h4>
                     </div>
 
                     <div className="flex items-center gap-1 shrink-0">
                       <button
-                        onClick={(e) => deleteStudy(item.id, e)}
-                        className="p-1.5 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-500/10 transition cursor-pointer"
-                        title="Eliminar estudo"
+                        onClick={(e) => handleDeleteFromLibrary(item.id, e)}
+                        className="p-2 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-500/10 transition cursor-pointer"
+                        title="Excluir estudo"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -461,6 +573,19 @@ export function CellLeaderView({ currentTheme }: CellLeaderViewProps) {
                   </div>
                 ))
               )}
+            </div>
+
+            <div className="pt-4 border-t border-black/10 dark:border-white/10 mt-2">
+              <button
+                onClick={() => {
+                  setShowUploadBox(true);
+                  setIsLibraryOpen(false);
+                }}
+                className="w-full py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl bg-amber-800 text-white hover:bg-amber-900 transition flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Carregar Outro PDF</span>
+              </button>
             </div>
 
           </div>
