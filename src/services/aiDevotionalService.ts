@@ -8,8 +8,8 @@ const ai = new GoogleGenAI({ apiKey });
 
 // Modelos oficiais estáveis suportados pelo SDK @google/genai
 const CANDIDATE_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-2.5-pro',
+  'gemini-3.8-flash',
+  'gemini-3.1-pro-preview',
 ];
 
 export function fileToBase64(file: File): Promise<string> {
