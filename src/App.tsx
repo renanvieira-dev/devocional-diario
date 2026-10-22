@@ -35,11 +35,13 @@ import {
   LogIn,
   UserPlus,
   Users,
-  Mic
+  Mic,
+  Download
 } from 'lucide-react';
 import { generateTheologicalStudy } from './services/aiDevotionalService';
 import { CellLeaderView } from './components/CellLeaderView';
 import { SermonView } from './components/SermonView';
+import { exportDevotionalToPdf } from './utils/exportDevotionalPdf';
 import type {
   DevotionalDay,
   ThemeMode,
@@ -369,7 +371,7 @@ export default function App() {
 
   const currentTheme = getThemeClasses();
 
-  // TELA DE LOGIN / REGISTO COM PROTEÇÃO DE MARGEM INFERIOR
+  // TELA DE AUTENTICAÇÃO COM PREVENÇÃO DE SOBREPOSIÇÃO
   if (!currentUser) {
     return (
       <div className={`min-h-[100dvh] flex flex-col justify-between safe-top safe-bottom pb-24 transition-colors duration-200 ${currentTheme.bg} ${currentTheme.textPrimary}`}>
@@ -701,7 +703,7 @@ export default function App() {
                     <div>
                       <h2 className="text-2xl sm:text-3xl font-bold font-serif">Alimente a sua mente e espírito hoje</h2>
                       <p className={`text-sm ${currentTheme.textSecondary} mt-1 leading-relaxed`}>
-                        A inteligência artificial prepara um estudo novo todos os dias com exegese bíblica nos originais, teologia clássica, reflexão aprofundada e desafios práticos para a sua vida.
+                        A inteligência artificial prepara um estudo novo todos os dias com exegese bíblica nos originais, teologia prática, reflexão aprofundada e desafios para a sua vida.
                       </p>
                     </div>
 
@@ -823,6 +825,16 @@ export default function App() {
                   <span className="px-3 py-1 text-xs font-semibold uppercase tracking-wider rounded-full bg-amber-900/10 text-amber-800 dark:text-amber-300">
                     {currentDevotional.theologicalTheme?.locus}
                   </span>
+
+                  {/* Botão de Exportação em PDF */}
+                  <button
+                    onClick={() => exportDevotionalToPdf(currentDevotional)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-xl bg-amber-800 text-white hover:bg-amber-900 transition shadow-xs cursor-pointer ml-1"
+                    title="Exportar estudo em PDF"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>PDF</span>
+                  </button>
                 </div>
               </div>
 
@@ -838,7 +850,7 @@ export default function App() {
               {currentDevotional.historicalRedemptiveContext && (
                 <section className={`p-5 rounded-2xl border ${currentTheme.card} space-y-2`}>
                   <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-800 dark:text-amber-400">
-                    <Compass className="w-4 h-4" /> Panorama & Contexto Canónico
+                    <Compass className="w-4 h-4" /> Panorama & Contexto Bíblico
                   </div>
                   <p className={`text-sm leading-relaxed ${currentTheme.textSecondary} font-reading text-justify`}>
                     {currentDevotional.historicalRedemptiveContext}
@@ -883,7 +895,7 @@ export default function App() {
                   >
                     <div className="flex items-center space-x-2.5">
                       <Languages className="w-5 h-5 text-amber-700 dark:text-amber-400" />
-                      <span>Vocabulário & Exegese nos Originais</span>
+                      <span>Palavras-chave nos Originais</span>
                     </div>
                     {showExegesis ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                   </button>
@@ -915,7 +927,7 @@ export default function App() {
 
               <section className="space-y-6">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-amber-700 dark:text-amber-400 border-b pb-2 border-black/10 dark:border-white/10">
-                  <Feather className="w-4 h-4" /> Exposição Doutrinária Aprofundada
+                  <Feather className="w-4 h-4" /> Exposição Prática da Palavra
                 </div>
 
                 <div className={`space-y-8 font-reading leading-relaxed ${
@@ -1007,7 +1019,7 @@ export default function App() {
                     <Target className="w-4 h-4" /> Desafios Práticos para a Vida
                   </div>
                   <p className={`text-xs sm:text-sm ${currentTheme.textSecondary}`}>
-                    A teologia bíblica autêntica manifesta-se em obediência real. Marque as ações conforme as colocar em prática:
+                    A Palavra de Deus manifesta-se em atitudes reais. Marque as ações conforme as colocar em prática:
                   </p>
 
                   <div className="grid gap-3 pt-2">
@@ -1082,7 +1094,7 @@ export default function App() {
                   <textarea
                     value={userNote}
                     onChange={(e) => setUserNote(e.target.value)}
-                    placeholder="Escreva as suas reflexões teológicas, desdobramentos de oração ou notas de estudo..."
+                    placeholder="Escreva as suas reflexões, respostas de oração ou notas..."
                     rows={5}
                     className="w-full p-4 rounded-xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/20 focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm font-reading"
                   />
