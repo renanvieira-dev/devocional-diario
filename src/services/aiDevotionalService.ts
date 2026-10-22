@@ -6,10 +6,10 @@ import type { SermonInsight } from '../types/sermon';
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
 
+// Modelos oficiais estáveis suportados pelo SDK @google/genai
 const CANDIDATE_MODELS = [
   'gemini-2.5-flash',
-  'gemini-2.0-flash',
-  'gemini-1.5-flash',
+  'gemini-2.5-pro',
 ];
 
 export function fileToBase64(file: File): Promise<string> {
@@ -25,29 +25,28 @@ export function fileToBase64(file: File): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// 1. DEVOCIONAL DIÁRIO (LINGUAGEM SIMPLES, DIRETA E COM ACENTOS COMPLETOS)
+// 1. DEVOCIONAL DIÁRIO / PESQUISA CUSTOMIZADA
 // ---------------------------------------------------------------------------
 export async function generateTheologicalStudy(
   passageOrTopic?: string
 ): Promise<DevotionalDay> {
   const todayStr = new Date().toLocaleDateString('pt-BR', { dateStyle: 'full' });
   
-  const prompt = passageOrTopic
-    ? `Crie um devocional prático, claro e inspirador sobre: "${passageOrTopic}".`
-    : `Crie o devocional de hoje (${todayStr}) baseado em uma passagem bíblica marcante e prática.`;
+  const prompt = passageOrTopic && passageOrTopic.trim().length > 0
+    ? `Crie um estudo bíblico devocional inspirador, claro e prático com foco específico em: "${passageOrTopic.trim()}". Escolha a melhor passagem bíblica canônica que responda ou embase esse tema.`
+    : `Crie o devocional de hoje (${todayStr}) baseado em uma passagem bíblica canônica edificante e prática.`;
 
   const fullPrompt = `${prompt}
 
-DIRETRIZES FUNDAMENTAIS DE LINGUAGEM:
-1. ORTOGRAFIA E ACENTUAÇÃO: Escreva em Português do Brasil correto, com TODOS os acentos gráficos devidamente aplicados (á, é, í, ó, ú, â, ê, ô, ã, õ, ç, à). Nunca omita acentos.
-2. TOM DE VOZ: Simples, acolhedor, fluido e direto. Escreva como um bom amigo conversando com você, sem termos difíceis, sem academicismo e sem jargões teológicos complicados.
-3. FÁCIL COMPREENSÃO: A leitura deve ser leve e clara. O leitor não deve precisar reler para entender a mensagem central.
-4. EXPLICAÇÃO PRÁTICA: Explique o que o texto significa para a vida real de hoje, no trabalho, na família e nas decisões diárias.
-5. DESAFIOS PRÁTICOS: 3 atitudes simples e realizáveis no dia a dia.`;
+DIRETRIZES DE ESTILO E LINGUAGEM:
+1. ORTOGRAFIA E ACENTUAÇÃO: Escreva em Português do Brasil com acentuação rigorosamente correta e completa em todas as palavras (como bênção, você, coração, está, são, não).
+2. LINGUAGEM CLARA E ACESSÍVEL: Linguagem fluida, direta e conversacional. Sem jargões acadêmicos herméticos ou palavras difíceis que cansam a leitura.
+3. CONEXÃO PRÁTICA: Explique como essa verdade bíblica transforma o dia a dia na família, trabalho e pensamentos.
+4. DESAFIOS PRÁTICOS: 3 passos objetivos e simples para aplicar ainda hoje.`;
 
   const schemaConfig = {
     systemInstruction:
-      'Você é um pastor amigo e comunicador claro. Sua missão é traduzir a Bíblia de forma simples, prática e sem formalismos difíceis, sempre com acentuação impecável em Português do Brasil.',
+      'Você é um pastor e professor bíblico próximo e comunicativo. Traduza verdades bíblicas de forma acessível, sem vocabulário rebuscado, com acentuação impecável em Português do Brasil.',
     responseMimeType: 'application/json',
     responseSchema: {
       type: Type.OBJECT,
@@ -192,30 +191,30 @@ DIRETRIZES FUNDAMENTAIS DE LINGUAGEM:
   let lastError: any = null;
 
   for (const modelName of CANDIDATE_MODELS) {
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const response = await ai.models.generateContent({
-          model: modelName,
-          contents: fullPrompt,
-          config: schemaConfig,
-        });
+    try {
+      console.log(`Gerando estudo com o modelo: ${modelName}...`);
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: fullPrompt,
+        config: schemaConfig,
+      });
 
-        const parsed = JSON.parse(response.text || '{}');
-        const now = new Date();
-        const startOfYear = new Date(now.getFullYear(), 0, 0);
-        const dayNumber = Math.floor(
-          (now.getTime() - startOfYear.getTime()) / (1000 * 60 * 60 * 24)
-        );
+      const parsed = JSON.parse(response.text || '{}');
+      const now = new Date();
+      const startOfYear = new Date(now.getFullYear(), 0, 0);
+      const dayNumber = Math.floor(
+        (now.getTime() - startOfYear.getTime()) / (1000 * 60 * 60 * 24)
+      );
 
-        parsed.id = parsed.id || `dev-${Date.now()}`;
-        parsed.date = parsed.date || now.toISOString().split('T')[0];
-        parsed.dayOfYear = parsed.dayOfYear || dayNumber;
+      parsed.id = parsed.id || `dev-${Date.now()}`;
+      parsed.date = parsed.date || now.toISOString().split('T')[0];
+      parsed.dayOfYear = parsed.dayOfYear || dayNumber;
 
-        return parsed as DevotionalDay;
-      } catch (err: any) {
-        lastError = err;
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
+      return parsed as DevotionalDay;
+    } catch (err: any) {
+      console.warn(`Tentativa no modelo ${modelName} falhou:`, err?.message || err);
+      lastError = err;
+      await new Promise((resolve) => setTimeout(resolve, 800));
     }
   }
 
@@ -223,25 +222,25 @@ DIRETRIZES FUNDAMENTAIS DE LINGUAGEM:
 }
 
 // ---------------------------------------------------------------------------
-// 2. ROTEIRO DE CÉLULA (TELEPROMPTER SIMPLES COM ACENTUAÇÃO E ANALOGIAS)
+// 2. ROTEIRO DE CÉLULA (TELEPROMPTER INTEGRADO)
 // ---------------------------------------------------------------------------
 export async function analyzeCellStudyPdf(file: File): Promise<CellStudyInsight> {
   const base64Data = await fileToBase64(file);
 
-  const prompt = `Você é um líder de célula experiente e descontraído, que fala de forma simples, clara e envolvente.
-Analise o PDF anexado e monte um roteiro integrado para facilitar a reunião.
+  const prompt = `Você é um líder de célula comunicativo e prático.
+Analise o PDF anexado e monte um roteiro integrado de ministração para facilitar a reunião.
 
-REGRAS DE OURO:
-1. ACENTUAÇÃO COMPLETA: Todo o texto gerado DEVE conter todas as palavras devidamente acentuadas em Português do Brasil (palavras como bênção, você, coração, está, são, não).
-2. LINGUAGEM CLARA E NATURAL: Escreva em linguagem coloquial, moderna e sem enrolação. Nada de frases compridas ou termos teológicos inacessíveis. Fale com clareza.
-3. CONTEÚDO ORIGINAL DO PDF: Mantenha as frases principais do PDF em cada seção para leitura direta aos irmãos.
+DIRETRIZES:
+1. ACENTUAÇÃO E ORTOGRAFIA: Todas as palavras devem ser acentuadas de forma correta e completa em Português do Brasil.
+2. LINGUAGEM NATURAL E DIRETA: Linguagem leve, sem afetação ou termos difíceis.
+3. CONTEÚDO ORIGINAL DO PDF: Preserve as passagens e pontos que o líder lerá para o grupo.
 4. ADICIONAIS DO LÍDER:
-   - Exemplo do cotidiano: Uma historinha ou comparação simples da vida moderna (trabalho, celular, trânsito, compras, família) que qualquer pessoa entenda na hora.
-   - Pergunta aberta: Uma pergunta leve e direta para puxar conversa na sala sem deixar o clima travado.`;
+   - Exemplo do cotidiano: Analogia simples e atual para cada ponto.
+   - Pergunta aberta: Pergunta que estimule diálogo na roda de conversa.`;
 
   const schemaConfig = {
     systemInstruction:
-      'Você é um líder de pequenos grupos prático e comunicativo. Escreva sempre em português claro, simples, acessível e 100% acentuado.',
+      'Você é um líder pastoral experiente em pequenos grupos. Escreva sempre em português claro, direto e 100% acentuado.',
     responseMimeType: 'application/json',
     responseSchema: {
       type: Type.OBJECT,
@@ -347,7 +346,7 @@ REGRAS DE OURO:
       return parsed;
     } catch (err: any) {
       lastError = err;
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 800));
     }
   }
 
@@ -355,7 +354,7 @@ REGRAS DE OURO:
 }
 
 // ---------------------------------------------------------------------------
-// 3. PREPARADOR DE SERMÕES (CLARO, OBJETIVO E TOTALMENTE ACENTUADO)
+// 3. PREPARADOR DE SERMÕES
 // ---------------------------------------------------------------------------
 export async function generateSermonOutline(
   themeOrTopic?: string,
@@ -368,19 +367,19 @@ export async function generateSermonOutline(
     .filter(Boolean)
     .join(' | ');
 
-  const prompt = `Crie um esboço de pregação claro, prático e inspirador com base em:
-${promptCriteria || 'Tema: A Paz que Supera o Medo | Texto: Filipenses 4:6-7'}
+  const prompt = `Crie um esboço homilético prático, claro e edificante com base em:
+${promptCriteria || 'Tema: A Paz de Deus | Texto: Filipenses 4:6-7'}
 
-DIRETRIZES DE ESTILO:
-1. ACENTUAÇÃO E ORTOGRAFIA: Todas as palavras devem ser acentuadas de forma completa e correta no Português do Brasil.
-2. LINGUAGEM ACESSÍVEL: Não use palavras difíceis, erudição desnecessária ou termos arcaicos. Fale de forma dinâmica, que prenda a atenção de jovens e adultos com naturalidade.
-3. IDEIA CENTRAL: Resuma a mensagem em uma frase simples e impactante que as pessoas consigam memorizar.
-4. ILUSTRAÇÕES DO DIA A DIA: Exemplos reais de situações do cotidiano para cada ponto.
-5. APELO DIRETO: Um convite claro e prático à mudança de atitude.`;
+DIRETRIZES:
+1. ACENTUAÇÃO COMPLETA: Português do Brasil perfeitamente acentuado.
+2. LINGUAGEM ACESSÍVEL: Clara, cativante e sem arcaísmos.
+3. IDEIA CENTRAL: Frase forte e memorável.
+4. ILUSTRAÇÕES: Comparações práticas do dia a dia para cada tópico.
+5. APELO: Convite direto e prático à resposta pessoal.`;
 
   const schemaConfig = {
     systemInstruction:
-      'Você é um pregador comunicativo e acolhedor. Seu objetivo é falar ao coração das pessoas com palavras simples, sem jargões complexos e com ortografia e acentuação impecáveis.',
+      'Você é um comunicador pastoral acolhedor. Fale com clareza e autoridade bíblica sem usar erudição vazia ou termos rebuscados.',
     responseMimeType: 'application/json',
     responseSchema: {
       type: Type.OBJECT,
@@ -466,7 +465,7 @@ DIRETRIZES DE ESTILO:
       return parsed;
     } catch (err: any) {
       lastError = err;
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 800));
     }
   }
 
