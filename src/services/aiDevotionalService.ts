@@ -6,16 +6,12 @@ import type { SermonInsight } from '../types/sermon';
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
 
-// Modelos Flash com rota de redundância para evitar bloqueios de tráfego (503)
 const CANDIDATE_MODELS = [
-  'gemini-3.7-flash',
-  'gemini-3.6-flash',
-  'gemini-3-flash-preview',
-  'gemini-3.8-flash',
-  'gemini-3.1-flash-lite',
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash',
 ];
 
-// Converte arquivo PDF local em base64 puro para envio à API Gemini
 export function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -29,7 +25,7 @@ export function fileToBase64(file: File): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// 1. GERAÇÃO DO DEVOCIONAL PESSOAL POR IA
+// 1. DEVOCIONAL DIÁRIO (LINGUAGEM SIMPLES, DIRETA E COM ACENTOS COMPLETOS)
 // ---------------------------------------------------------------------------
 export async function generateTheologicalStudy(
   passageOrTopic?: string
@@ -37,21 +33,21 @@ export async function generateTheologicalStudy(
   const todayStr = new Date().toLocaleDateString('pt-BR', { dateStyle: 'full' });
   
   const prompt = passageOrTopic
-    ? `Gera um estudo bíblico devocional aprofundado, denso e estruturado sobre: "${passageOrTopic}".`
-    : `Gera o devocional teológico aprofundado de hoje (${todayStr}). Escolhe uma passagem bíblica canónica relevante (alternando Antigo e Novo Testamento).`;
+    ? `Crie um devocional prático, claro e inspirador sobre: "${passageOrTopic}".`
+    : `Crie o devocional de hoje (${todayStr}) baseado em uma passagem bíblica marcante e prática.`;
 
   const fullPrompt = `${prompt}
-Diretrizes:
-- Tom: Contemporâneo, claro e teologicamente rigoroso.
-- Exegese: 1 a 2 termos em grego/hebraico com morfologia e aplicação.
-- Exposição: 2 a 3 secções com boa densidade bíblica.
-- Credos e História: Cita 1 confissão histórica e 1 teólogo clássico.
-- Desafios Práticos: Exatamente 3 ações objetivas ('Vida Pessoal', 'Relacionamentos', 'Trabalho & Rotina').
-- Oração: Sincera e pastoral.`;
+
+DIRETRIZES FUNDAMENTAIS DE LINGUAGEM:
+1. ORTOGRAFIA E ACENTUAÇÃO: Escreva em Português do Brasil correto, com TODOS os acentos gráficos devidamente aplicados (á, é, í, ó, ú, â, ê, ô, ã, õ, ç, à). Nunca omita acentos.
+2. TOM DE VOZ: Simples, acolhedor, fluido e direto. Escreva como um bom amigo conversando com você, sem termos difíceis, sem academicismo e sem jargões teológicos complicados.
+3. FÁCIL COMPREENSÃO: A leitura deve ser leve e clara. O leitor não deve precisar reler para entender a mensagem central.
+4. EXPLICAÇÃO PRÁTICA: Explique o que o texto significa para a vida real de hoje, no trabalho, na família e nas decisões diárias.
+5. DESAFIOS PRÁTICOS: 3 atitudes simples e realizáveis no dia a dia.`;
 
   const schemaConfig = {
     systemInstruction:
-      'És um professor e teólogo bíblico. Produz estudos fiéis, profundos e sem superficialidade em formato JSON estruturado.',
+      'Você é um pastor amigo e comunicador claro. Sua missão é traduzir a Bíblia de forma simples, prática e sem formalismos difíceis, sempre com acentuação impecável em Português do Brasil.',
     responseMimeType: 'application/json',
     responseSchema: {
       type: Type.OBJECT,
@@ -198,7 +194,6 @@ Diretrizes:
   for (const modelName of CANDIDATE_MODELS) {
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        console.log(`Tentativa ${attempt} com o modelo: ${modelName}...`);
         const response = await ai.models.generateContent({
           model: modelName,
           contents: fullPrompt,
@@ -216,12 +211,10 @@ Diretrizes:
         parsed.date = parsed.date || now.toISOString().split('T')[0];
         parsed.dayOfYear = parsed.dayOfYear || dayNumber;
 
-        console.log(`Estudo gerado com sucesso pelo modelo: ${modelName}`);
         return parsed as DevotionalDay;
       } catch (err: any) {
         lastError = err;
-        console.warn(`Tentativa ${attempt} no modelo ${modelName} falhou:`, err?.message || err);
-        await new Promise((resolve) => setTimeout(resolve, 1500));
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     }
   }
@@ -230,27 +223,25 @@ Diretrizes:
 }
 
 // ---------------------------------------------------------------------------
-// 2. ANÁLISE DE PDF & ROTEIRO INTEGRADO PARA CÉLULA (TELEPROMPTER)
+// 2. ROTEIRO DE CÉLULA (TELEPROMPTER SIMPLES COM ACENTUAÇÃO E ANALOGIAS)
 // ---------------------------------------------------------------------------
 export async function analyzeCellStudyPdf(file: File): Promise<CellStudyInsight> {
   const base64Data = await fileToBase64(file);
 
-  const prompt = `Você é um pastor e mentor experiente de líderes de células e pequenos grupos.
-Analise o PDF anexado com o estudo/esboço e gere um ROTEIRO INTEGRADO DE MINISTRAÇÃO.
+  const prompt = `Você é um líder de célula experiente e descontraído, que fala de forma simples, clara e envolvente.
+Analise o PDF anexado e monte um roteiro integrado para facilitar a reunião.
 
-OBJETIVO CRÍTICO:
-O líder vai usar este roteiro diretamente no celular durante a reunião da célula.
-ELE NÃO DEVE PRECISAR ABRIR O PDF EM NENHUM MOMENTO.
-Portanto:
-1. MANTENHA RIGOROSAMENTE A ESTRUTURA E O TEXTO ORIGINAL DO PDF que o líder precisa ler ou repassar para os irmãos (introdução, versículos, pontos centrais e conclusão).
-2. LOGO ABAIXO DE CADA PONTO DE LEITURA DO PDF, insira os "Adicionais do Líder":
-   - Uma analogia ou exemplo prático do cotidiano atual (trabalho, família, rotina, tecnologia) perfeitamente coerente para ilustrar aquele ponto.
-   - Um insight explicativo pastoral para aprofundar o entendimento.
-   - Uma pergunta aberta e dinâmica de engajamento para o líder fazer à célula logo após ler aquele trecho, evitando que a reunião vire um monólogo.`;
+REGRAS DE OURO:
+1. ACENTUAÇÃO COMPLETA: Todo o texto gerado DEVE conter todas as palavras devidamente acentuadas em Português do Brasil (palavras como bênção, você, coração, está, são, não).
+2. LINGUAGEM CLARA E NATURAL: Escreva em linguagem coloquial, moderna e sem enrolação. Nada de frases compridas ou termos teológicos inacessíveis. Fale com clareza.
+3. CONTEÚDO ORIGINAL DO PDF: Mantenha as frases principais do PDF em cada seção para leitura direta aos irmãos.
+4. ADICIONAIS DO LÍDER:
+   - Exemplo do cotidiano: Uma historinha ou comparação simples da vida moderna (trabalho, celular, trânsito, compras, família) que qualquer pessoa entenda na hora.
+   - Pergunta aberta: Uma pergunta leve e direta para puxar conversa na sala sem deixar o clima travado.`;
 
   const schemaConfig = {
     systemInstruction:
-      'Você é um pastor e professor de homilética pastoral para pequenos grupos. Preserve fielmente o conteúdo do roteiro original e enriqueça cada parte com exemplos práticos.',
+      'Você é um líder de pequenos grupos prático e comunicativo. Escreva sempre em português claro, simples, acessível e 100% acentuado.',
     responseMimeType: 'application/json',
     responseSchema: {
       type: Type.OBJECT,
@@ -343,58 +334,53 @@ Portanto:
   let lastError: any = null;
 
   for (const modelName of CANDIDATE_MODELS) {
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        console.log(`Tentativa ${attempt} de processamento do PDF no modelo: ${modelName}...`);
-        const response = await ai.models.generateContent({
-          model: modelName,
-          contents: parts,
-          config: schemaConfig,
-        });
+    try {
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: parts,
+        config: schemaConfig,
+      });
 
-        const parsed = JSON.parse(response.text || '{}') as CellStudyInsight;
-        
-        // Atribui ID único e data para salvar na biblioteca
-        parsed.id = parsed.id || `cell_${Date.now()}`;
-        parsed.createdAt = parsed.createdAt || new Date().toISOString().split('T')[0];
-
-        console.log(`Roteiro de célula gerado com sucesso pelo modelo: ${modelName}`);
-        return parsed;
-      } catch (err: any) {
-        lastError = err;
-        console.warn(`Tentativa ${attempt} no modelo ${modelName} falhou:`, err?.message || err);
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-      }
+      const parsed = JSON.parse(response.text || '{}') as CellStudyInsight;
+      parsed.id = parsed.id || `cell_${Date.now()}`;
+      parsed.createdAt = parsed.createdAt || new Date().toISOString().split('T')[0];
+      return parsed;
+    } catch (err: any) {
+      lastError = err;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
 
   throw lastError;
 }
 
+// ---------------------------------------------------------------------------
+// 3. PREPARADOR DE SERMÕES (CLARO, OBJETIVO E TOTALMENTE ACENTUADO)
+// ---------------------------------------------------------------------------
 export async function generateSermonOutline(
   themeOrTopic?: string,
   biblicalPassage?: string
 ): Promise<SermonInsight> {
   const promptCriteria = [
-    themeOrTopic ? `Tema do Sermão: "${themeOrTopic}"` : null,
-    biblicalPassage ? `Texto Bíblico Base: "${biblicalPassage}"` : null,
+    themeOrTopic ? `Tema da Mensagem: "${themeOrTopic}"` : null,
+    biblicalPassage ? `Texto Bíblico: "${biblicalPassage}"` : null,
   ]
     .filter(Boolean)
     .join(' | ');
 
-  const prompt = `Você é um pastor sênior e mestre em homilética clássica e contemporânea.
-Crie um ESBOÇO COMPLETO E DENSO DE SERMÃO para púlpito com base nos seguintes dados:
-${promptCriteria || 'Tema: A Graça Transformadora de Cristo | Texto: Efésios 2:1-10'}
+  const prompt = `Crie um esboço de pregação claro, prático e inspirador com base em:
+${promptCriteria || 'Tema: A Paz que Supera o Medo | Texto: Filipenses 4:6-7'}
 
-Critérios Homiléticos Obrigatórios:
-- Proposição Central: Defina uma "Grande Ideia" clara, memorável e bíblica.
-- Introdução: Crie um gancho envolvente que conecte uma dor/desafio real da rotina contemporânea com o texto sagrado.
-- Desenvolvimento (3 pontos principais encadeados): Para cada ponto, forneça o fundamento bíblico, uma analogia/ilustração vívida do dia a dia e uma aplicação direta à vida da congregação.
-- Conclusão: Recapitulação concisa, apelo pastoral direto e direcionamento prático de oração.`;
+DIRETRIZES DE ESTILO:
+1. ACENTUAÇÃO E ORTOGRAFIA: Todas as palavras devem ser acentuadas de forma completa e correta no Português do Brasil.
+2. LINGUAGEM ACESSÍVEL: Não use palavras difíceis, erudição desnecessária ou termos arcaicos. Fale de forma dinâmica, que prenda a atenção de jovens e adultos com naturalidade.
+3. IDEIA CENTRAL: Resuma a mensagem em uma frase simples e impactante que as pessoas consigam memorizar.
+4. ILUSTRAÇÕES DO DIA A DIA: Exemplos reais de situações do cotidiano para cada ponto.
+5. APELO DIRETO: Um convite claro e prático à mudança de atitude.`;
 
   const schemaConfig = {
     systemInstruction:
-      'Você é um professor de homilética pastoral focado em pregação expositiva e bíblica.',
+      'Você é um pregador comunicativo e acolhedor. Seu objetivo é falar ao coração das pessoas com palavras simples, sem jargões complexos e com ortografia e acentuação impecáveis.',
     responseMimeType: 'application/json',
     responseSchema: {
       type: Type.OBJECT,
@@ -468,7 +454,6 @@ Critérios Homiléticos Obrigatórios:
 
   for (const modelName of CANDIDATE_MODELS) {
     try {
-      console.log(`Gerando esboço de sermão com o modelo: ${modelName}...`);
       const response = await ai.models.generateContent({
         model: modelName,
         contents: prompt,
@@ -480,9 +465,8 @@ Critérios Homiléticos Obrigatórios:
       parsed.createdAt = parsed.createdAt || new Date().toISOString().split('T')[0];
       return parsed;
     } catch (err: any) {
-      console.warn(`Tentativa de sermão no modelo ${modelName} falhou:`, err?.message || err);
       lastError = err;
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
 
