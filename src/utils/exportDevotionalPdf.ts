@@ -1,7 +1,8 @@
 import jsPDF from 'jspdf';
 import type { DevotionalDay } from '../types/devotional';
 
-export function exportDevotionalToPdf(devotional: DevotionalDay) {
+// Constrói o documento PDF com o design editorial do Kerygma
+export function buildDevotionalPdfDoc(devotional: DevotionalDay): jsPDF {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -20,12 +21,11 @@ export function exportDevotionalToPdf(devotional: DevotionalDay) {
     cardBg: [250, 247, 242] as [number, number, number],      // Fundo suave quente (#FAF7F2)
     cardBorder: [226, 213, 195] as [number, number, number],  // Borda elegante (#E2D5C3)
     textPrimary: [44, 36, 29] as [number, number, number],    // Grafite quente (#2C241D)
-    textSecondary: [107, 90, 75] as [number, number, number], // Marrom médio (#6B5A4B)
+    textSecondary: [107, 90, 75] as [number, number, number], // Castanho médio (#6B5A4B)
     accentBox: [244, 238, 230] as [number, number, number],   // Fundo de destaque (#F4EEE6)
     emerald: [16, 120, 80] as [number, number, number],       // Verde para desafios/conclusão
   };
 
-  // Controle inteligente de quebra de página
   const ensureSpace = (neededHeight: number) => {
     if (cursorY + neededHeight > pageHeight - 22) {
       doc.addPage();
@@ -33,7 +33,6 @@ export function exportDevotionalToPdf(devotional: DevotionalDay) {
     }
   };
 
-  // Desenha um Card com cantos arredondados
   const drawCard = (x: number, y: number, w: number, h: number, bg = colors.cardBg, border = colors.cardBorder) => {
     doc.setFillColor(bg[0], bg[1], bg[2]);
     doc.setDrawColor(border[0], border[1], border[2]);
@@ -41,21 +40,17 @@ export function exportDevotionalToPdf(devotional: DevotionalDay) {
     doc.roundedRect(x, y, w, h, 3, 3, 'FD');
   };
 
-  // ---------------------------------------------------------------------------
-  // 1. TOPO: BADGE DO LOCUS TEOLÓGICO + DATA
-  // ---------------------------------------------------------------------------
+  // 1. Topo: Badge do Locus Teológico + Data
   const locusName = (devotional.theologicalTheme?.locus || 'DEVOCIONAL BÍBLICO').toUpperCase();
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
   
-  // Pílula do Tema
   const badgeWidth = doc.getTextWidth(locusName) + 8;
   doc.setFillColor(colors.primary[0], colors.primary[1], colors.primary[2]);
   doc.roundedRect(margin, cursorY - 4, badgeWidth, 6, 2, 2, 'F');
   doc.setTextColor(255, 255, 255);
   doc.text(locusName, margin + 4, cursorY + 0.3);
 
-  // Data à direita
   if (devotional.date) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
@@ -65,9 +60,7 @@ export function exportDevotionalToPdf(devotional: DevotionalDay) {
 
   cursorY += 8;
 
-  // ---------------------------------------------------------------------------
-  // 2. TÍTULO PRINCIPAL E SUBTÍTULO
-  // ---------------------------------------------------------------------------
+  // 2. Título Principal e Subtítulo
   doc.setFont('times', 'bold');
   doc.setFontSize(21);
   doc.setTextColor(colors.textPrimary[0], colors.textPrimary[1], colors.textPrimary[2]);
@@ -86,9 +79,7 @@ export function exportDevotionalToPdf(devotional: DevotionalDay) {
 
   cursorY += 2;
 
-  // ---------------------------------------------------------------------------
-  // 3. CARD: TEXTO BÍBLICO BASE (COM BARRA LATERAL TERRICOTA)
-  // ---------------------------------------------------------------------------
+  // 3. Card do Texto Bíblico Base
   const keyVerse = devotional.scripture?.keyVerse ? `"${devotional.scripture.keyVerse}"` : '';
   const refHeader = `${devotional.scripture?.reference || ''} (${devotional.scripture?.version || 'NVT'})`.toUpperCase();
 
@@ -105,26 +96,21 @@ export function exportDevotionalToPdf(devotional: DevotionalDay) {
   const verseBlockHeight = 12 + (verseLines.length * 5.5) + (fullScriptureLines.length ? fullScriptureLines.length * 4.5 + 6 : 0);
   ensureSpace(verseBlockHeight + 6);
 
-  // Fundo do Card Bíblico
   drawCard(margin, cursorY, contentWidth, verseBlockHeight, colors.cardBg, colors.cardBorder);
 
-  // Barra lateral esquerda terracota (estilo Kerygma)
   doc.setFillColor(colors.primary[0], colors.primary[1], colors.primary[2]);
   doc.roundedRect(margin, cursorY, 2.5, verseBlockHeight, 1, 1, 'F');
 
-  // Cabeçalho da Referência Bíblica
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
   doc.setTextColor(colors.primary[0], colors.primary[1], colors.primary[2]);
   doc.text(refHeader, margin + 7, cursorY + 7);
 
-  // Versículo-chave destacado
   doc.setFont('times', 'bolditalic');
   doc.setFontSize(12);
   doc.setTextColor(colors.textPrimary[0], colors.textPrimary[1], colors.textPrimary[2]);
   doc.text(verseLines, margin + 7, cursorY + 13);
 
-  // Texto corrido (se houver)
   if (fullScriptureLines.length > 0) {
     const textStartY = cursorY + 13 + (verseLines.length * 5.5);
     doc.setDrawColor(colors.cardBorder[0], colors.cardBorder[1], colors.cardBorder[2]);
@@ -139,9 +125,7 @@ export function exportDevotionalToPdf(devotional: DevotionalDay) {
 
   cursorY += verseBlockHeight + 7;
 
-  // ---------------------------------------------------------------------------
-  // 4. PANORAMA & CONTEXTO HISTÓRICO-REDENTIVO (SE HOUVER)
-  // ---------------------------------------------------------------------------
+  // 4. Panorama & Contexto Histórico
   if (devotional.historicalRedemptiveContext) {
     doc.setFont('times', 'normal');
     doc.setFontSize(9.5);
@@ -164,9 +148,7 @@ export function exportDevotionalToPdf(devotional: DevotionalDay) {
     cursorY += contextHeight + 6;
   }
 
-  // ---------------------------------------------------------------------------
-  // 5. VOCABULÁRIO & EXEGESE NOS ORIGINAIS (SE HOUVER)
-  // ---------------------------------------------------------------------------
+  // 5. Palavras-Chave nos Originais
   if (devotional.exegesisInsights && devotional.exegesisInsights.length > 0) {
     ensureSpace(24);
     doc.setFont('helvetica', 'bold');
@@ -208,9 +190,7 @@ export function exportDevotionalToPdf(devotional: DevotionalDay) {
     cursorY += 2;
   }
 
-  // ---------------------------------------------------------------------------
-  // 6. EXPOSIÇÃO DA PALAVRA
-  // ---------------------------------------------------------------------------
+  // 6. Exposição da Palavra
   if (devotional.expositionSections && devotional.expositionSections.length > 0) {
     ensureSpace(16);
     doc.setFont('helvetica', 'bold');
@@ -243,9 +223,7 @@ export function exportDevotionalToPdf(devotional: DevotionalDay) {
     });
   }
 
-  // ---------------------------------------------------------------------------
-  // 7. DESAFIOS PRÁTICOS PARA A VIDA (CARDS COM CHECKBOX)
-  // ---------------------------------------------------------------------------
+  // 7. Desafios Práticos com Checkbox
   if (devotional.practicalChallenges && devotional.practicalChallenges.length > 0) {
     ensureSpace(20);
     doc.setFont('helvetica', 'bold');
@@ -263,19 +241,16 @@ export function exportDevotionalToPdf(devotional: DevotionalDay) {
       ensureSpace(cardHeight + 4);
       drawCard(margin, cursorY, contentWidth, cardHeight, colors.cardBg, colors.cardBorder);
 
-      // Checkbox visual [ ]
       doc.setDrawColor(colors.textSecondary[0], colors.textSecondary[1], colors.textSecondary[2]);
       doc.setLineWidth(0.4);
       doc.rect(margin + 5, cursorY + 4.5, 4, 4);
 
-      // Categoria + Título
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
       doc.setTextColor(colors.emerald[0], colors.emerald[1], colors.emerald[2]);
       const headerTitle = `[${ch.category.toUpperCase()}] ${ch.title}`;
       doc.text(headerTitle, margin + 12, cursorY + 7.5);
 
-      // Descrição da ação prática
       doc.setFont('times', 'normal');
       doc.setFontSize(9.5);
       doc.setTextColor(colors.textPrimary[0], colors.textPrimary[1], colors.textPrimary[2]);
@@ -287,9 +262,7 @@ export function exportDevotionalToPdf(devotional: DevotionalDay) {
     cursorY += 3;
   }
 
-  // ---------------------------------------------------------------------------
-  // 8. ORAÇÃO GUIADA
-  // ---------------------------------------------------------------------------
+  // 8. Oração Guiada
   if (devotional.guidedPrayer) {
     doc.setFont('times', 'italic');
     doc.setFontSize(10);
@@ -312,14 +285,11 @@ export function exportDevotionalToPdf(devotional: DevotionalDay) {
     cursorY += prayerHeight + 6;
   }
 
-  // ---------------------------------------------------------------------------
-  // 9. RODAPÉ INSTITUCIONAL EM TODAS AS PÁGINAS
-  // ---------------------------------------------------------------------------
+  // 9. Rodapé Institucional
   const totalPages = doc.getNumberOfPages();
   for (let i = 1; i <= totalPages; i++) {
     doc.setPage(i);
 
-    // Linha divisória de rodapé
     doc.setDrawColor(colors.cardBorder[0], colors.cardBorder[1], colors.cardBorder[2]);
     doc.setLineWidth(0.3);
     doc.line(margin, pageHeight - 14, pageWidth - margin, pageHeight - 14);
@@ -337,7 +307,17 @@ export function exportDevotionalToPdf(devotional: DevotionalDay) {
     );
   }
 
-  // Nome do arquivo gerado
+  return doc;
+}
+
+export function getDevotionalPdfBlobUrl(devotional: DevotionalDay): string {
+  const doc = buildDevotionalPdfDoc(devotional);
+  const blob = doc.output('blob');
+  return URL.createObjectURL(blob);
+}
+
+export function exportDevotionalToPdf(devotional: DevotionalDay) {
+  const doc = buildDevotionalPdfDoc(devotional);
   const safeTitle = (devotional.title || 'devocional')
     .toLowerCase()
     .normalize('NFD')

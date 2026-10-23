@@ -36,12 +36,14 @@ import {
   UserPlus,
   Users,
   Mic,
-  Download
+  Download,
+  Eye,
+  ExternalLink
 } from 'lucide-react';
 import { generateTheologicalStudy } from './services/aiDevotionalService';
 import { CellLeaderView } from './components/CellLeaderView';
 import { SermonView } from './components/SermonView';
-import { exportDevotionalToPdf } from './utils/exportDevotionalPdf';
+import { exportDevotionalToPdf, getDevotionalPdfBlobUrl } from './utils/exportDevotionalPdf';
 import type {
   DevotionalDay,
   ThemeMode,
@@ -57,7 +59,6 @@ export default function App() {
     return saved ? JSON.parse(saved) : null;
   });
 
-  // Gestão das 3 abas principais
   const [activeTab, setActiveTab] = useState<'devotional' | 'cell' | 'sermon'>('devotional');
 
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
@@ -87,6 +88,10 @@ export default function App() {
   const [scrollProgress, setScrollProgress] = useState<number>(0);
   const [showCompletionModal, setShowCompletionModal] = useState<boolean>(false);
 
+  // Estados da Pré-visualização do PDF
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [isPdfPreviewOpen, setIsPdfPreviewOpen] = useState<boolean>(false);
+
   const [isCalendarOpen, setIsCalendarOpen] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedLocus, setSelectedLocus] = useState<string>('Todos');
@@ -112,6 +117,21 @@ export default function App() {
     if (theme === 'sepia') setTheme('dark');
     else if (theme === 'dark') setTheme('light');
     else setTheme('sepia');
+  };
+
+  const handleOpenPdfPreview = () => {
+    if (!currentDevotional) return;
+    const url = getDevotionalPdfBlobUrl(currentDevotional);
+    setPdfPreviewUrl(url);
+    setIsPdfPreviewOpen(true);
+  };
+
+  const handleClosePdfPreview = () => {
+    if (pdfPreviewUrl) {
+      URL.revokeObjectURL(pdfPreviewUrl);
+      setPdfPreviewUrl(null);
+    }
+    setIsPdfPreviewOpen(false);
   };
 
   const handleAuthSubmit = async (e: FormEvent) => {
@@ -371,7 +391,6 @@ export default function App() {
 
   const currentTheme = getThemeClasses();
 
-  // TELA DE AUTENTICAÇÃO COM PREVENÇÃO DE SOBREPOSIÇÃO
   if (!currentUser) {
     return (
       <div className={`min-h-[100dvh] flex flex-col justify-between safe-top safe-bottom pb-24 transition-colors duration-200 ${currentTheme.bg} ${currentTheme.textPrimary}`}>
@@ -616,7 +635,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* Seletor de Abas: Devocional Pessoal, Célula e Sermões */}
+      {/* Seletor de Abas */}
       <div className={`border-b ${currentTheme.border} bg-black/5 dark:bg-white/5 px-4`}>
         <div className="max-w-4xl mx-auto flex items-center justify-center sm:justify-start gap-2 py-2 overflow-x-auto">
           <button
@@ -826,13 +845,13 @@ export default function App() {
                     {currentDevotional.theologicalTheme?.locus}
                   </span>
 
-                  {/* Botão de Exportação em PDF */}
+                  {/* Botão de Pré-visualizar e Baixar PDF */}
                   <button
-                    onClick={() => exportDevotionalToPdf(currentDevotional)}
+                    onClick={handleOpenPdfPreview}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-xl bg-amber-800 text-white hover:bg-amber-900 transition shadow-xs cursor-pointer ml-1"
-                    title="Exportar estudo em PDF"
+                    title="Pré-visualizar e exportar PDF"
                   >
-                    <Download className="w-3.5 h-3.5" />
+                    <Eye className="w-3.5 h-3.5" />
                     <span>PDF</span>
                   </button>
                 </div>
@@ -1125,6 +1144,59 @@ export default function App() {
         </>
       )}
 
+      {/* MODAL: PRÉ-VISUALIZAÇÃO DO PDF */}
+      {isPdfPreviewOpen && pdfPreviewUrl && currentDevotional && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-xs animate-in fade-in">
+          <div className={`w-full max-w-4xl h-[92vh] rounded-3xl border flex flex-col shadow-2xl overflow-hidden ${currentTheme.card}`}>
+            
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-black/10 dark:border-white/10 shrink-0">
+              <div className="flex items-center gap-2">
+                <ScrollText className="w-5 h-5 text-amber-700" />
+                <h3 className="font-serif font-bold text-base sm:text-lg">Pré-visualização do PDF</h3>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <a
+                  href={pdfPreviewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hidden sm:flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 hover:bg-black/10 transition"
+                  title="Abrir em separador completo"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Separador</span>
+                </a>
+
+                <button
+                  onClick={() => exportDevotionalToPdf(currentDevotional)}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider rounded-xl bg-amber-800 text-white hover:bg-amber-900 transition shadow-xs cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Descarregar</span>
+                </button>
+
+                <button
+                  onClick={handleClosePdfPreview}
+                  className="p-1.5 rounded-lg hover:bg-black/10 transition cursor-pointer"
+                  title="Fechar"
+                >
+                  <X className="w-5 h-5 text-stone-400" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 w-full bg-stone-900/10 dark:bg-black/40 p-2 sm:p-4">
+              <iframe
+                src={pdfPreviewUrl}
+                title="Pré-visualização do Devocional"
+                className="w-full h-full rounded-2xl border border-black/10 dark:border-white/10 bg-white shadow-inner"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Conclusão */}
       {showCompletionModal && currentDevotional && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
           <div className={`w-full max-w-md rounded-3xl border p-8 shadow-2xl ${currentTheme.card} text-center space-y-5 relative`}>
@@ -1164,6 +1236,7 @@ export default function App() {
         </div>
       )}
 
+      {/* Modal do Histórico de Estudos */}
       {isCalendarOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
           <div className={`w-full max-w-xl rounded-2xl border p-6 shadow-2xl ${currentTheme.card} flex flex-col max-h-[85vh]`}>
